@@ -1,6 +1,3 @@
--- Migración 002: nombres libres, chats reales entre usuarios, sala pública y respuestas con texto.
--- Pegar completo en la Console de la base D1 (lab-papers-db) y ejecutar. Es seguro correrlo más de una vez.
-
 CREATE TABLE IF NOT EXISTS users (
   device_id TEXT PRIMARY KEY,
   public_id TEXT NOT NULL UNIQUE,
