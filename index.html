@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lab · Papers</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#3f5d46">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lab">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -254,6 +261,10 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 
 #toast{ position:absolute; left:20px; right:20px; bottom:78px; background:var(--ink); color:var(--paper); padding:12px 16px; border-radius:10px; font-size:13.5px; text-align:center; z-index:40; transform:translateY(20px); opacity:0; transition:all .25s; pointer-events:none;}
 #toast.show{ transform:translateY(0); opacity:1; }
+.compose-bar{ display:block; flex:0 0 auto; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 14px; text-align:left; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; color:var(--muted); font:inherit; font-size:14px; cursor:pointer; }
+.post-text{ white-space:pre-wrap; word-break:break-word; }
+.bubble{ white-space:pre-wrap; word-break:break-word; }
+.setting-row .value#name-value{ max-width:170px; text-align:right; justify-content:flex-end; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
@@ -299,6 +310,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="screen-title">Comunidad</div>
       <button class="dm-btn" id="btn-dm" aria-label="Mensajes directos"><span class="dm-badge" id="dm-badge"></span></button>
     </div>
+    <button class="compose-bar" id="compose-open">Comparte algo con la comunidad…</button>
     <div id="social-feed" style="flex:1; overflow-y:auto; padding-bottom:20px;"></div>
   </section>
 
@@ -333,9 +345,12 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       </div>
     </div>
     <div class="settings-list">
+      <div class="setting-row" id="row-name"><div class="label">Nombre</div><div class="value" id="name-value"></div></div>
+      <div class="setting-row" id="row-code"><div class="label">Mi código</div><div class="value" id="code-value"></div></div>
       <div class="setting-row" id="row-interests"><div class="label">Intereses</div><div class="value" id="interests-value"></div></div>
       <div class="setting-row" id="row-lang"><div class="label">Preferencias de idioma</div><div class="value" id="lang-value"></div></div>
       <div class="setting-row" id="row-theme"><div class="label">Tema</div><div class="value" id="theme-value"></div></div>
+      <div class="setting-row" id="row-install"><div class="label">Instalar app</div><div class="value">Añadir a inicio</div></div>
       <div class="setting-row danger" id="row-logout"><div class="label">Cierre de sesión</div></div>
     </div>
   </section>
@@ -501,39 +516,14 @@ const papers = [
   }}
 ];
 
-const contacts = [
- {id:'u_marina', name:'Marina Rojas', kind:'person', sub:'Inmunología · mismo laboratorio'},
- {id:'u_tomas', name:'Tomás Ibarra', kind:'person', sub:'Teoría · aprendizaje por refuerzo'},
- {id:'u_ana', name:'Ana Beltrán', kind:'person', sub:'Neurociencia'},
- {id:'g_neuro', name:'Cohorte Neuro 2026', kind:'group', sub:'6 integrantes'},
- {id:'g_astro', name:'Grupo Astro Lab', kind:'group', sub:'4 integrantes'}
-];
-function contactById(id){ return contacts.find(c=>c.id===id); }
 function initials(name){ return name.split(' ').filter(w=>w.length>1).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
-
-let conversations = [
- { id:'c1', participantIds:['u_marina'], pinnedPaperId:'p1', time:'2 h', unreadCount:0,
-   messages:[
-     {authorId:'u_marina', text:'Miren esto, me recordó a lo que discutimos el martes', attachedPaperId:'p1'},
-     {authorId:ME, text:'Justo lo que necesitaba para la sección de métodos, gracias'}
-   ]},
- { id:'c2', participantIds:['g_neuro'], pinnedPaperId:'p2', time:'ayer', unreadCount:8,
-   messages:[
-     {authorId:'u_ana', text:'¿Alguien ya leyó la parte del etiquetado sináptico?'},
-     {authorId:ME, text:'Yo, calza con el paper que vimos el mes pasado'}
-   ]},
- { id:'c3', participantIds:['u_tomas'], pinnedPaperId:null, time:'lun', unreadCount:2,
-   messages:[
-     {authorId:'u_tomas', text:'¿Seguimos con el club de lectura el jueves?'}
-   ]}
-];
 
 const ALL_INTERESTS = ['Neurociencia','Aprendizaje profundo','Bioinformática','Inmunología','Astrofísica','Genética','Aprendizaje automático'];
 const TRANSLATE_LANGS = ['Español','Inglés','Portugués','Francés'];
 const APP_LANGS = ['Español','Inglés','Portugués'];
 const THEMES = [ {id:'normal', name:'Normal', a:'#3f5d46', b:'#fbf8f0'}, {id:'negro', name:'Negro', a:'#8fbf93', b:'#1e1c17'}, {id:'alto-contraste', name:'Alto contraste', a:'#000000', b:'#fff066'} ];
 
-const session = { loggedIn:false, name:'Valentina Soto', affiliation:'Bioinformática · Universidad Austral' };
+const session = { loggedIn:false, name:lsGet('lab_name')||'', affiliation:lsGet('lab_aff')||'', publicId:lsGet('lab_pid')||'', handle:lsGet('lab_handle')||'' };
 const profile = { interestAreas:['Neurociencia','Aprendizaje profundo','Bioinformática'], translationLanguage:'Inglés', appLanguage:'Español', theme:'normal' };
 
 let folders = [ {id:'fav', name:'Favoritos'}, {id:'f1', name:'Carpeta personal 1'}, {id:'f2', name:'Carpeta personal 2'} ];
@@ -553,16 +543,79 @@ function toast(msg){
   toastTimer = setTimeout(()=>el.classList.remove('show'), 2400);
 }
 
+/* ================= IDENTIDAD + API ================= */
+// Cada navegador tiene un deviceId secreto (localStorage). El servidor le asigna un publicId,
+// que es lo único que otras personas ven (para chats directos). El nombre lo elige cada quien.
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function getDeviceId(){
+  let id = lsGet('lab_device_id');
+  if(!id){
+    id = 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    lsSet('lab_device_id', id);
+    if(lsGet('lab_device_id') !== id){
+      // Storage bloqueado (navegación privada): id efímero solo para esta carga de página.
+      if(!getDeviceId._fallback) getDeviceId._fallback = id;
+      return getDeviceId._fallback;
+    }
+  }
+  return id;
+}
+async function api(path, opts){
+  const res = await fetch(path, opts);
+  let data = null;
+  try{ data = await res.json(); }catch(e){}
+  if(!res.ok) throw new Error((data && data.error) || 'network');
+  return data;
+}
+function apiPost(path, body){
+  return api(path, {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify(Object.assign({ deviceId:getDeviceId() }, body))
+  });
+}
+function hasIdentity(){ return !!(session.name && session.publicId && session.handle); }
+async function registerIdentity(name, aff){
+  const data = await apiPost('/api/users', { name, affiliation:aff });
+  session.name = data.name; session.affiliation = aff; session.publicId = data.publicId; session.handle = data.handle;
+  lsSet('lab_name', data.name); lsSet('lab_aff', aff); lsSet('lab_pid', data.publicId); lsSet('lab_handle', data.handle);
+}
+function openNameSheet(onDone){
+  const body =
+    '<input class="share-comment" id="name-input" type="text" maxlength="40" placeholder="Tu nombre (el que quieras)" value="'+esc(session.name)+'" style="margin-top:0;">' +
+    '<input class="share-comment" id="aff-input" type="text" maxlength="80" placeholder="Afiliación, ej. Universidad de Chile (opcional)" value="'+esc(session.affiliation)+'">';
+  openSheet({
+    title:'¿Cómo te llamas?',
+    sub:'Elige el nombre que quieras. Te asignaremos un código único (ej. Jose#4821) para que tus amigos te encuentren.',
+    bodyHtml: body, footerText:'Guardar',
+    onConfirm: async ()=>{
+      const name = document.getElementById('name-input').value.trim();
+      const aff = document.getElementById('aff-input').value.trim();
+      if(!name){ toast('Escribe un nombre'); return; }
+      try{
+        await registerIdentity(name, aff);
+        closeSheet(); toast('Listo. Tu código es '+session.handle);
+        renderProfile(); startChatPolling();
+        if(typeof onDone === 'function') onDone();
+      } catch(e){ toast('No se pudo guardar el nombre. Intenta de nuevo.'); }
+    }
+  });
+  setTimeout(()=>{ const i=document.getElementById('name-input'); if(i) i.focus(); }, 60);
+}
+function requireIdentity(cb){ if(hasIdentity()) cb(); else openNameSheet(cb); }
+
 /* ================= ONBOARDING ================= */
-document.getElementById('btn-create-account').innerHTML = icon('user')+' Crear cuenta con Gmail';
-document.getElementById('btn-login').innerHTML = 'Ya tengo cuenta · Iniciar sesión con Gmail';
+document.getElementById('btn-create-account').innerHTML = icon('user')+' Crear mi perfil';
+document.getElementById('btn-login').innerHTML = 'Ya tengo perfil · Entrar';
 document.getElementById('btn-create-account').addEventListener('click', ()=>{
-  toast('Cuenta creada con Gmail');
+  toast('¡Vamos a crear tu perfil!');
   goSurvey('onboarding');
 });
 document.getElementById('btn-login').addEventListener('click', ()=>{
-  toast('Cargando tus datos desde Supabase…');
-  setTimeout(()=>{ session.loggedIn = true; goApp(); }, 500);
+  session.loggedIn = true; goApp();
 });
 
 let surveyMode = 'onboarding';
@@ -594,7 +647,7 @@ function renderSurveyGrid(){
 document.getElementById('survey-confirm').addEventListener('click', ()=>{
   profile.interestAreas = Array.from(surveySelected);
   if(surveyMode==='onboarding'){
-    toast('Guardado en Supabase');
+    toast('Intereses guardados');
     session.loggedIn = true;
     goApp();
   } else {
@@ -606,11 +659,18 @@ document.getElementById('survey-confirm').addEventListener('click', ()=>{
 function goApp(){
   document.querySelectorAll('.stage').forEach(s=>s.classList.remove('active'));
   showTab('home');
+  if(hasIdentity()){
+    // Reafirma el nombre en el servidor (mantiene el directorio al día) y arranca el chat.
+    registerIdentity(session.name, session.affiliation).then(startChatPolling).catch(startChatPolling);
+  } else {
+    openNameSheet();
+  }
 }
 
 /* ================= NAV ================= */
 let currentTab = 'home';
 function showTab(tab){
+  if(typeof leaveThread === 'function') leaveThread();
   currentTab = tab;
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
@@ -629,7 +689,7 @@ document.querySelectorAll('.tab').forEach(btn=>{
   btn.innerHTML = `<span class="icon-wrap">${icon(TAB_ICON[t])}${t==='library'?'<span class="dot" id="lib-dot"></span>':''}</span><span>${TAB_LABEL[t]}</span>`;
 });
 function updateTabDots(){
-  const totalUnread = conversations.reduce((a,c)=>a+c.unreadCount,0);
+  const totalUnread = chatState.unreadTotal;
   const badge = document.getElementById('dm-badge');
   if(badge){ badge.textContent = totalUnread>9? '9+' : totalUnread; badge.classList.toggle('show', totalUnread>0); }
   const anyLib = Object.values(userState).some(s=>s.folders.size>0);
@@ -832,138 +892,168 @@ function openShareSheet(paperId){
   const waUrl = 'https://wa.me/?text='+encodeURIComponent(shareText);
   const mailUrl = 'mailto:?subject='+encodeURIComponent('Paper: '+p.title.es)+'&body='+encodeURIComponent(shareText);
   const body = `
+    <div class="pick-row" id="share-public">
+      <div class="ico">${icon('feed')}</div><div class="info"><div class="n">Comunidad (público)</div><div class="s">Lo verá todo Chile en la pestaña Social</div></div>
+    </div>
+    <div class="pick-row" id="share-inapp">
+      <div class="ico">${icon('chat')}</div><div class="info"><div class="n">Mensajería de Lab</div><div class="s">Enviar a personas o a la sala pública</div></div>
+    </div>
     <a class="pick-row" href="${waUrl}" target="_blank" rel="noopener" id="share-wa">
       <div class="ico">${icon('whatsapp')}</div><div class="info"><div class="n">WhatsApp</div><div class="s">Enviar por WhatsApp</div></div>
     </a>
     <a class="pick-row" href="${mailUrl}" id="share-mail">
       <div class="ico">${icon('gmail')}</div><div class="info"><div class="n">Gmail</div><div class="s">Enviar por correo</div></div>
-    </a>
-    <div class="pick-row" id="share-inapp">
-      <div class="ico">${icon('chat')}</div><div class="info"><div class="n">Mensajería de Lab</div><div class="s">Enviar a un contacto dentro de la app</div></div>
-    </div>`;
+    </a>`;
   openSheet({ title:'Compartir paper', bodyHtml: body });
   document.getElementById('share-wa').addEventListener('click', ()=> setTimeout(closeSheet, 200));
   document.getElementById('share-mail').addEventListener('click', ()=> setTimeout(closeSheet, 200));
+  document.getElementById('share-public').addEventListener('click', ()=> openSharePublicSheet(paperId));
   document.getElementById('share-inapp').addEventListener('click', ()=> openShareContactsSheet(paperId));
 }
-let shareSelection = new Set();
-function openShareContactsSheet(paperId){
-  shareSelection = new Set();
-  const body = `
-    <div id="share-contacts">
-      ${contacts.map(c=>`
-        <div class="pick-row" data-id="${c.id}">
-          <div class="avatar ${c.kind==='group'?'group':''}">${initials(c.name)}</div>
-          <div class="info"><div class="n">${c.name}</div><div class="s">${c.sub}</div></div>
-          <div class="check">${icon('check')}</div>
-        </div>`).join('')}
-    </div>
-    <textarea class="share-comment" id="share-comment" rows="2" placeholder="Añade un comentario (opcional)"></textarea>`;
-  openSheet({
-    title:'Enviar por mensajería de Lab', bodyHtml: body, footerText:'Enviar',
-    onConfirm:()=>{
-      if(shareSelection.size===0){ toast('Elige al menos un destinatario'); return; }
-      const comment = document.getElementById('share-comment').value.trim();
-      shareSelection.forEach(cid=> shareToContact(paperId, cid, comment));
-      closeSheet();
-      toast('Compartido con '+Array.from(shareSelection).map(id=>contactById(id).name).join(', '));
-    }
-  });
-  document.querySelectorAll('#share-contacts .pick-row').forEach(row=>{
-    row.addEventListener('click', ()=>{
-      const id = row.dataset.id;
-      if(shareSelection.has(id)){ shareSelection.delete(id); row.classList.remove('selected'); }
-      else { shareSelection.add(id); row.classList.add('selected'); }
-    });
+function openSharePublicSheet(paperId){
+  requireIdentity(()=>{
+    const p = papers.find(pp=>pp.id===paperId);
+    const body = `
+      <div class="pinned-paper" style="margin:0 0 12px; cursor:default;"><h4>${esc(p.title.es)}</h4><div class="meta">${esc(p.authors)}</div></div>
+      <textarea class="share-comment" id="public-comment" rows="3" maxlength="2000" placeholder="¿Qué te pareció? (opcional)"></textarea>`;
+    openSheet({ title:'Publicar en la comunidad', sub:'Lo verá cualquier persona que use Lab.', bodyHtml: body, footerText:'Publicar',
+      onConfirm: async ()=>{
+        const text = document.getElementById('public-comment').value.trim();
+        try{
+          await apiPost('/api/social/posts', { text, paperId });
+          closeSheet(); toast('Publicado para toda la comunidad');
+          if(currentTab==='chat') loadAndRenderSocialFeed();
+        } catch(e){ toast('No se pudo publicar'); }
+      }});
   });
 }
-function shareToContact(paperId, contactId, comment){
-  let conv = conversations.find(c=> c.participantIds.length===1 && c.participantIds[0]===contactId);
-  if(!conv){
-    conv = { id:'c'+Date.now()+Math.random().toString(36).slice(2,5), participantIds:[contactId], pinnedPaperId:paperId, time:'ahora', unreadCount:0, messages:[] };
-    conversations.unshift(conv);
-  } else {
-    if(!conv.pinnedPaperId) conv.pinnedPaperId = paperId;
-    conv.time='ahora';
-    conversations = conversations.filter(c=>c.id!==conv.id);
-    conversations.unshift(conv);
-  }
-  conv.messages.push({authorId:ME, text:comment||undefined, attachedPaperId:paperId});
-  updateTabDots();
+function openShareContactsSheet(paperId){
+  requireIdentity(async ()=>{
+    openSheet({ title:'Enviar por mensajería de Lab', bodyHtml:'<div class="empty-state">Cargando personas…</div>' });
+    let users = [];
+    try{ users = await searchUsers(''); }
+    catch(e){ closeSheet(); toast('No se pudo cargar la lista de personas'); return; }
+    const general = { convId:'general', name:'Sala pública · Chile', sub:'La ven todos los usuarios', group:true };
+    let targets = [general].concat(users.map(u=>({ convId:dmConvId(u.publicId), name:u.handle, sub:u.affiliation||'', group:false })));
+    const sel = new Set();
+    function listHtml(q){
+      const rows = targets.map(t=>`
+        <div class="pick-row ${sel.has(t.convId)?'selected':''}" data-id="${esc(t.convId)}">
+          <div class="avatar ${t.group?'group':''}">${t.group?'CL':esc(initials(t.name)||'?')}</div>
+          <div class="info"><div class="n">${esc(t.name)}</div><div class="s">${esc(t.sub)}</div></div>
+          <div class="check">${icon('check')}</div>
+        </div>`).join('');
+      return rows || '<div class="empty-state">Nadie coincide con esa búsqueda.</div>';
+    }
+    function wireRows(){
+      document.querySelectorAll('#share-contacts .pick-row').forEach(row=>{
+        row.addEventListener('click', ()=>{
+          const id = row.dataset.id;
+          if(sel.has(id)){ sel.delete(id); row.classList.remove('selected'); }
+          else { sel.add(id); row.classList.add('selected'); }
+        });
+      });
+    }
+    const body = `
+      <input class="share-comment" id="share-search" type="text" placeholder="Buscar por nombre o código (Jose#4821)…" autocomplete="off" style="margin-top:0;">
+      <div id="share-contacts" style="margin-top:8px;">${listHtml('')}</div>
+      <textarea class="share-comment" id="share-comment" rows="2" maxlength="1000" placeholder="Añade un comentario (opcional)"></textarea>`;
+    openSheet({
+      title:'Enviar por mensajería de Lab', bodyHtml: body, footerText:'Enviar',
+      onConfirm: async ()=>{
+        if(sel.size===0){ toast('Elige al menos un destinatario'); return; }
+        const comment = document.getElementById('share-comment').value.trim();
+        try{
+          await Promise.all(Array.from(sel).map(convId=> apiPost('/api/chat/messages', { convId, text:comment, paperId })));
+          closeSheet(); toast('Compartido con '+sel.size+(sel.size===1?' conversación':' conversaciones'));
+          refreshInbox();
+        } catch(e){ toast('No se pudo enviar'); }
+      }
+    });
+    wireRows();
+    let latest = 0;
+    document.getElementById('share-search').addEventListener('input', debounce(async e=>{
+      const q = e.target.value.trim();
+      const ticket = ++latest;
+      try{
+        const found = await searchUsers(q);
+        if(ticket !== latest) return;
+        const keep = targets.filter(t=>sel.has(t.convId));
+        const fresh = found.map(u=>({ convId:dmConvId(u.publicId), name:u.handle, sub:u.affiliation||'', group:false }));
+        const showGeneral = !q || 'sala pública chile'.includes(q.toLowerCase());
+        targets = (showGeneral ? [general] : []).concat(keep.filter(t=>!t.group && !fresh.some(f=>f.convId===t.convId)), fresh);
+        if(!showGeneral && sel.has('general')) targets.unshift(general);
+        const list = document.getElementById('share-contacts');
+        if(!list) return;
+        list.innerHTML = listHtml(q);
+        wireRows();
+      } catch(err){ /* mantiene la lista anterior */ }
+    }, 250));
+  });
 }
 
-/* ================= SOCIAL FEED (compartido vía Cloudflare D1) ================= */
-// Los posts, likes y contadores viven en una base de datos compartida (ver SETUP-SOCIAL-DB.md).
-// Todo lo demás de la app (Home, Biblioteca, Perfil) sigue siendo estado local del navegador.
+/* ================= SOCIAL FEED (compartido, Cloudflare D1) ================= */
+// Las publicaciones, likes y respuestas viven en una base de datos compartida: lo que alguien
+// publica lo ve todo el mundo. Home, Biblioteca y Perfil siguen siendo estado local del navegador.
 let socialPosts = [];
 let socialLoadFailed = false;
+let socialLoading = false;
+let socialSig = '';
 
-function getDeviceId(){
-  try{
-    let id = localStorage.getItem('lab_device_id');
-    if(!id){
-      id = 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem('lab_device_id', id);
-    }
-    return id;
-  } catch(e){
-    // Navegación privada / storage bloqueado: id efímero solo para esta carga de página.
-    if(!getDeviceId._fallback){
-      getDeviceId._fallback = 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-    }
-    return getDeviceId._fallback;
-  }
-}
-
-async function fetchSocialPosts(){
-  const res = await fetch('/api/social/posts?device=' + encodeURIComponent(getDeviceId()));
-  if(!res.ok) throw new Error('network');
-  const data = await res.json();
-  return data.posts;
-}
-async function loadAndRenderSocialFeed(){
+async function loadAndRenderSocialFeed(silent){
+  if(socialLoading) return;
+  socialLoading = true;
   const wrap = document.getElementById('social-feed');
-  wrap.innerHTML = `<div class="empty-state">Cargando publicaciones…</div>`;
-  socialLoadFailed = false;
+  if(!silent && socialPosts.length===0) wrap.innerHTML = '<div class="empty-state">Cargando publicaciones…</div>';
   try{
-    socialPosts = await fetchSocialPosts();
+    const data = await api('/api/social/posts?device=' + encodeURIComponent(getDeviceId()));
+    const sig = JSON.stringify(data.posts);
+    socialLoadFailed = false;
+    if(silent && sig === socialSig){ socialLoading = false; return; }
+    socialSig = sig;
+    socialPosts = data.posts;
   } catch(e){
-    socialLoadFailed = true;
+    if(!silent || socialPosts.length===0) socialLoadFailed = true;
+    else { socialLoading = false; return; }
   }
+  socialLoading = false;
   renderSocialFeed();
+}
+function postCardHtml(post){
+  const paper = post.paperId ? papers.find(p=>p.id===post.paperId) : null;
+  let quotedHtml = '';
+  if(post.quotedPostId){
+    const qp = socialPosts.find(x=>x.id===post.quotedPostId);
+    if(qp) quotedHtml = '<div class="post-quoted"><b>'+esc(qp.authorName)+':</b> '+esc(qp.text)+'</div>';
+  }
+  return `<div class="post-card" data-id="${esc(post.id)}">
+    <div class="post-head">
+      <div class="avatar">${esc(initials(post.authorName)||'?')}</div>
+      <div class="post-author"><div class="n">${esc(post.authorName)}</div><div class="s">${esc(post.authorSub||'')}</div></div>
+    </div>
+    ${post.text ? `<div class="post-text">${esc(post.text)}</div>` : ''}
+    ${quotedHtml}
+    ${paper? `<div class="post-paper" data-pid="${paper.id}"><div class="pp-label">${paper.section}</div><h4>${paper.title.es}</h4><div class="pp-meta">${paper.authors}</div></div>` : ''}
+    <div class="post-actions">
+      <button class="post-act like ${post.likedByMe?'active':''}" data-act="like">${icon('heart')}<span>${post.likes}</span></button>
+      <button class="post-act" data-act="reply">${icon('reply')}<span>${post.replies}</span></button>
+      <button class="post-act" data-act="quote">${icon('quote')}<span>${post.quotes}</span></button>
+    </div>
+  </div>`;
 }
 function renderSocialFeed(){
   const wrap = document.getElementById('social-feed');
   if(socialLoadFailed){
-    wrap.innerHTML = `<div class="empty-state">No se pudo cargar el feed compartido. Revisa la conexión a la base de datos (ver SETUP-SOCIAL-DB.md) e inténtalo de nuevo.</div>`;
+    wrap.innerHTML = '<div class="empty-state">No se pudo cargar el feed compartido. Revisa tu conexión e inténtalo de nuevo.</div>';
     return;
   }
   if(socialPosts.length===0){
-    wrap.innerHTML = `<div class="empty-state">Todavía no hay publicaciones. Sé el primero en comentar un paper.</div>`;
+    wrap.innerHTML = '<div class="empty-state">Todavía no hay publicaciones. Sé el primero en comentar un paper.</div>';
     return;
   }
-  wrap.innerHTML = socialPosts.map(post=>{
-    const paper = post.paperId ? papers.find(p=>p.id===post.paperId) : null;
-    let quotedHtml = '';
-    if(post.quotedPostId){
-      const qp = socialPosts.find(x=>x.id===post.quotedPostId);
-      if(qp){ quotedHtml = `<div class="post-quoted"><b>${qp.authorName}:</b> ${qp.text}</div>`; }
-    }
-    return `<div class="post-card" data-id="${post.id}">
-      <div class="post-head">
-        <div class="avatar">${initials(post.authorName)}</div>
-        <div class="post-author"><div class="n">${post.authorName}</div><div class="s">${post.authorSub||''}</div></div>
-      </div>
-      <div class="post-text">${post.text}</div>
-      ${quotedHtml}
-      ${paper? `<div class="post-paper" data-pid="${paper.id}"><div class="pp-label">${paper.section}</div><h4>${paper.title.es}</h4><div class="pp-meta">${paper.authors}</div></div>` : ''}
-      <div class="post-actions">
-        <button class="post-act like ${post.likedByMe?'active':''}" data-act="like">${icon('heart')}<span>${post.likes}</span></button>
-        <button class="post-act" data-act="reply">${icon('reply')}<span>${post.replies}</span></button>
-        <button class="post-act" data-act="quote">${icon('quote')}<span>${post.quotes}</span></button>
-      </div>
-    </div>`;
-  }).join('');
+  const top = wrap.scrollTop;
+  wrap.innerHTML = socialPosts.map(postCardHtml).join('');
+  wrap.scrollTop = top;
   wrap.querySelectorAll('.post-paper').forEach(el=> el.addEventListener('click', ()=> openReader(el.dataset.pid)));
   wrap.querySelectorAll('.post-card').forEach(card=>{
     const id = card.dataset.id;
@@ -971,6 +1061,25 @@ function renderSocialFeed(){
     card.querySelector('[data-act="reply"]').addEventListener('click', ()=> openReplySheet(id));
     card.querySelector('[data-act="quote"]').addEventListener('click', ()=> openQuoteSheet(id));
   });
+}
+document.getElementById('compose-open').addEventListener('click', ()=> requireIdentity(()=> openComposeSheet()));
+function openComposeSheet(){
+  const opts = '<option value="">Sin paper</option>' + papers.map(p=>'<option value="'+p.id+'">'+esc(p.title.es)+'</option>').join('');
+  const body =
+    '<textarea class="share-comment" id="compose-text" rows="4" maxlength="2000" placeholder="¿Qué quieres compartir con la comunidad?" style="margin-top:0;"></textarea>' +
+    '<select class="share-comment" id="compose-paper">'+opts+'</select>';
+  openSheet({ title:'Nueva publicación', sub:'La verá cualquier persona que use Lab.', bodyHtml: body, footerText:'Publicar',
+    onConfirm: async ()=>{
+      const text = document.getElementById('compose-text').value.trim();
+      const paperId = document.getElementById('compose-paper').value || null;
+      if(!text && !paperId){ toast('Escribe algo o elige un paper'); return; }
+      try{
+        await apiPost('/api/social/posts', { text, paperId });
+        closeSheet(); toast('Publicado para toda la comunidad');
+        loadAndRenderSocialFeed();
+      } catch(e){ toast('No se pudo publicar'); }
+    }});
+  setTimeout(()=>{ const i=document.getElementById('compose-text'); if(i) i.focus(); }, 60);
 }
 async function toggleLikePost(id){
   const post = socialPosts.find(p=>p.id===id);
@@ -980,164 +1089,251 @@ async function toggleLikePost(id){
   post.likes += post.likedByMe? 1 : -1;
   renderSocialFeed();
   try{
-    const res = await fetch(`/api/social/posts/${id}/like`, {
-      method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ deviceId: getDeviceId() })
-    });
-    if(!res.ok) throw new Error('network');
-    const data = await res.json();
+    const data = await apiPost('/api/social/posts/'+encodeURIComponent(id)+'/like', {});
     post.likes = data.likes; post.likedByMe = data.likedByMe;
-    renderSocialFeed();
   } catch(e){
     post.likedByMe = prevLiked; post.likes = prevLikes;
-    renderSocialFeed();
     toast('No se pudo guardar el "me gusta"');
   }
+  socialSig = JSON.stringify(socialPosts);
+  renderSocialFeed();
 }
 function openReplySheet(id){
-  const post = socialPosts.find(p=>p.id===id);
-  const body = `<textarea class="share-comment" id="reply-text" rows="3" placeholder="Escribe tu respuesta…"></textarea>`;
-  openSheet({ title:'Responder', bodyHtml: body, footerText:'Publicar respuesta',
-    onConfirm: async ()=>{
-      const val = document.getElementById('reply-text').value.trim();
-      if(!val){ toast('Escribe algo para responder'); return; }
-      try{
-        const res = await fetch(`/api/social/posts/${id}/reply`, { method:'POST' });
-        if(!res.ok) throw new Error('network');
-        const data = await res.json();
-        post.replies = data.replies;
-        closeSheet(); renderSocialFeed();
-        toast('Respuesta publicada');
-      } catch(e){
-        closeSheet();
-        toast('No se pudo publicar la respuesta');
-      }
-    }});
+  requireIdentity(async ()=>{
+    const post = socialPosts.find(p=>p.id===id);
+    if(!post) return;
+    const body = '<div id="reply-list"><div class="empty-state" style="padding:14px;">Cargando respuestas…</div></div>' +
+      '<textarea class="share-comment" id="reply-text" rows="3" maxlength="1000" placeholder="Escribe tu respuesta…"></textarea>';
+    openSheet({ title:'Responder', bodyHtml: body, footerText:'Publicar respuesta',
+      onConfirm: async ()=>{
+        const val = document.getElementById('reply-text').value.trim();
+        if(!val){ toast('Escribe algo para responder'); return; }
+        try{
+          const data = await apiPost('/api/social/posts/'+encodeURIComponent(id)+'/reply', { text: val });
+          post.replies = data.replies;
+          closeSheet(); loadAndRenderSocialFeed(true);
+          toast('Respuesta publicada');
+        } catch(e){ toast('No se pudo publicar la respuesta'); }
+      }});
+    try{
+      const data = await api('/api/social/posts/'+encodeURIComponent(id)+'/reply');
+      const list = document.getElementById('reply-list');
+      if(!list) return;
+      list.innerHTML = data.replies.length
+        ? data.replies.map(r=>'<div class="pinned-paper" style="margin:0 0 8px; cursor:default;"><h4>'+esc(r.authorName)+'</h4><div class="meta" style="white-space:pre-wrap;">'+esc(r.text)+'</div></div>').join('')
+        : '<div class="empty-state" style="padding:14px;">Aún no hay respuestas. Sé la primera persona en responder.</div>';
+    } catch(e){
+      const list = document.getElementById('reply-list');
+      if(list) list.innerHTML = '';
+    }
+  });
 }
 function openQuoteSheet(id){
-  const post = socialPosts.find(p=>p.id===id);
-  const body = `
-    <div class="pinned-paper" style="margin:0 0 12px; cursor:default;"><h4>${post.authorName}</h4><div class="meta">${post.text}</div></div>
-    <textarea class="share-comment" id="quote-text" rows="3" placeholder="Añade tu comentario…"></textarea>`;
-  openSheet({ title:'Citar publicación', bodyHtml: body, footerText:'Publicar cita',
-    onConfirm: async ()=>{
-      const val = document.getElementById('quote-text').value.trim();
-      if(!val){ toast('Añade un comentario para citar'); return; }
-      try{
-        const res = await fetch('/api/social/posts', {
-          method:'POST', headers:{'content-type':'application/json'},
-          body: JSON.stringify({
-            text: val, paperId: post.paperId||null, quotedPostId: post.id,
-            authorName: session.name, authorSub: session.affiliation
-          })
-        });
-        if(!res.ok) throw new Error('network');
-        closeSheet();
-        toast('Publicaste una cita');
-        loadAndRenderSocialFeed();
-      } catch(e){
-        closeSheet();
-        toast('No se pudo publicar la cita');
-      }
-    }});
+  requireIdentity(()=>{
+    const post = socialPosts.find(p=>p.id===id);
+    if(!post) return;
+    const body =
+      '<div class="pinned-paper" style="margin:0 0 12px; cursor:default;"><h4>'+esc(post.authorName)+'</h4><div class="meta" style="white-space:pre-wrap;">'+esc(post.text)+'</div></div>' +
+      '<textarea class="share-comment" id="quote-text" rows="3" maxlength="2000" placeholder="Añade tu comentario…"></textarea>';
+    openSheet({ title:'Citar publicación', bodyHtml: body, footerText:'Publicar cita',
+      onConfirm: async ()=>{
+        const val = document.getElementById('quote-text').value.trim();
+        if(!val){ toast('Añade un comentario para citar'); return; }
+        try{
+          await apiPost('/api/social/posts', { text: val, paperId: post.paperId||null, quotedPostId: post.id });
+          closeSheet(); toast('Publicaste una cita');
+          loadAndRenderSocialFeed();
+        } catch(e){ toast('No se pudo publicar la cita'); }
+      }});
+  });
 }
 
-/* ================= DMs (acceso directo) ================= */
+/* ================= CHATS (mensajería real entre personas + sala pública) ================= */
+const chatState = { inbox:[], unreadTotal:0, convId:null, kind:null, renderedSeq:0, threadTimer:null, inboxTimer:null };
+
+function dmConvId(otherPublicId){ return 'dm:' + [session.publicId, otherPublicId].sort().join('|'); }
+async function refreshInbox(){
+  if(!hasIdentity()) return false;
+  try{
+    const data = await api('/api/chat/inbox?device=' + encodeURIComponent(getDeviceId()));
+    chatState.inbox = data.conversations;
+    chatState.unreadTotal = data.unreadTotal;
+    updateTabDots();
+    return true;
+  } catch(e){ return false; }
+}
+function stopChatPolling(){ clearInterval(chatState.inboxTimer); chatState.inboxTimer = null; }
+function startChatPolling(){
+  stopChatPolling();
+  if(!hasIdentity()) return;
+  refreshInbox();
+  chatState.inboxTimer = setInterval(()=>{
+    if(document.hidden) return;
+    refreshInbox();
+    const overlayOpen = document.getElementById('sheet').classList.contains('show') || document.getElementById('reader').classList.contains('open');
+    if(currentTab==='chat' && !chatState.convId && !overlayOpen) loadAndRenderSocialFeed(true);
+  }, 30000);
+}
+function previewOf(last, kind){
+  if(!last) return kind==='general' ? 'Todos los que usan Lab en Chile. Escribe el primero.' : '';
+  const mine = last.senderId === session.publicId;
+  const who = mine ? 'Tú: ' : (kind==='general' ? esc(last.senderName)+': ' : '');
+  if(last.text) return who + esc(last.text);
+  const p = papers.find(pp=>pp.id===last.paperId);
+  return who + 'Compartió: «' + esc(p ? p.title.es : 'un paper') + '»';
+}
+
 document.getElementById('btn-dm').innerHTML = icon('send')+'<span class="dm-badge" id="dm-badge"></span>';
 document.getElementById('btn-dm').addEventListener('click', openDMInbox);
 function openDMInbox(){
-  let body;
-  if(conversations.length===0){
-    body = `<div class="empty-state">Todavía no tienes conversaciones. Comparte un paper desde el Home para iniciar una.</div>`;
-  } else {
-    body = conversations.map(conv=>{
-      const c = contactById(conv.participantIds[0]);
-      const last = conv.messages[conv.messages.length-1];
-      let preview = '';
-      if(last){
-        if(last.text) preview = (last.authorId===ME? 'Tú: ':'') + last.text;
-        else if(last.attachedPaperId){ const p = papers.find(pp=>pp.id===last.attachedPaperId); preview = 'Compartió: «'+(p?p.title.es:'')+'»'; }
-      }
-      return `<div class="pick-row" data-conv="${conv.id}">
-        <div class="avatar ${c.kind==='group'?'group':''}">${initials(c.name)}</div>
-        <div class="info"><div class="n">${c.name}</div><div class="s">${preview}</div></div>
-        ${conv.unreadCount>0? `<div class="unread-badge">${conv.unreadCount}</div>`:''}
+  requireIdentity(async ()=>{
+    openSheet({ title:'Mensajes', sub:'Sala pública de todo Chile y tus mensajes directos', bodyHtml:'<div class="empty-state">Cargando…</div>',
+      footerText:'Nueva conversación', onConfirm: openNewConvoPicker });
+    const ok = await refreshInbox();
+    const body = document.getElementById('sheet-body');
+    if(!document.getElementById('sheet').classList.contains('show') || !body) return;
+    if(!ok){ body.innerHTML = '<div class="empty-state">No se pudieron cargar tus mensajes. Inténtalo de nuevo.</div>'; return; }
+    body.innerHTML = chatState.inbox.map(c=>{
+      const isGeneral = c.kind==='general';
+      const title = isGeneral ? 'Sala pública · Chile' : c.peer.handle;
+      return `<div class="pick-row" data-conv="${esc(c.convId)}" data-title="${esc(title)}" data-kind="${c.kind}">
+        <div class="avatar ${isGeneral?'group':''}">${isGeneral?'CL':esc(initials(c.peer.name)||'?')}</div>
+        <div class="info"><div class="n">${esc(title)}</div><div class="s">${previewOf(c.last, c.kind)}</div></div>
+        ${c.unread>0? `<div class="unread-badge">${c.unread}</div>`:''}
       </div>`;
     }).join('');
-  }
-  openSheet({ title:'Mensajes', sub:'Tu mensajería privada', bodyHtml: body, footerText:'Nueva conversación',
-    onConfirm: openNewConvoPicker });
-  document.querySelectorAll('#sheet-body .pick-row[data-conv]').forEach(row=>{
-    row.addEventListener('click', ()=>{ closeSheet(); openThread(row.dataset.conv); });
-  });
-}
-function openNewConvoPicker(){
-  let picked = null;
-  const body = contacts.map(c=>`
-    <div class="pick-row" data-id="${c.id}">
-      <div class="avatar ${c.kind==='group'?'group':''}">${initials(c.name)}</div>
-      <div class="info"><div class="n">${c.name}</div><div class="s">${c.sub}</div></div>
-      <div class="check">${icon('check')}</div>
-    </div>`).join('');
-  openSheet({
-    title:'Nueva conversación', bodyHtml:body, footerText:'Iniciar',
-    onConfirm:()=>{
-      if(!picked){ toast('Elige un contacto'); return; }
-      let conv = conversations.find(c=> c.participantIds.length===1 && c.participantIds[0]===picked);
-      if(!conv){ conv = { id:'c'+Date.now(), participantIds:[picked], pinnedPaperId:null, time:'ahora', unreadCount:0, messages:[] }; conversations.unshift(conv); }
-      closeSheet(); openThread(conv.id);
-    }
-  });
-  document.querySelectorAll('#sheet-body .pick-row').forEach(row=>{
-    row.addEventListener('click', ()=>{
-      document.querySelectorAll('#sheet-body .pick-row').forEach(r=>r.classList.remove('selected'));
-      row.classList.add('selected'); picked = row.dataset.id;
+    body.querySelectorAll('.pick-row[data-conv]').forEach(row=>{
+      row.addEventListener('click', ()=>{ closeSheet(); openThread(row.dataset.conv, row.dataset.title, row.dataset.kind); });
     });
   });
 }
-let openConvId = null;
-function openThread(id){
-  openConvId = id;
-  const conv = conversations.find(c=>c.id===id);
-  conv.unreadCount = 0; updateTabDots();
-  const c = contactById(conv.participantIds[0]);
-  document.getElementById('thread-avatar').className = 'avatar '+(c.kind==='group'?'group':'');
-  document.getElementById('thread-avatar').textContent = initials(c.name);
-  document.getElementById('thread-name').textContent = c.name;
-  renderThreadPinned(conv); renderThreadMessages(conv);
+// Busca personas en el servidor (por nombre o afiliación) y excluye a quien está usando la app.
+async function searchUsers(q){
+  const data = await api('/api/users' + (q ? '?q=' + encodeURIComponent(q) : ''));
+  return data.users.filter(u=>u.publicId !== session.publicId);
+}
+function debounce(fn, ms){
+  let t = null;
+  return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
+}
+async function openNewConvoPicker(){
+  openSheet({ title:'Nueva conversación', sub:'Busca por nombre o por código completo, ej. Jose#4821', bodyHtml:'<div class="empty-state">Cargando personas…</div>' });
+  function listHtml(users, q){
+    const rows = users.map(u=>`
+      <div class="pick-row" data-pid="${esc(u.publicId)}" data-name="${esc(u.handle)}">
+        <div class="avatar">${esc(initials(u.name)||'?')}</div>
+        <div class="info"><div class="n">${esc(u.handle)}</div><div class="s">${esc(u.affiliation||'')}</div></div>
+      </div>`).join('');
+    if(rows) return rows;
+    return q ? '<div class="empty-state">Nadie coincide con esa búsqueda.</div>'
+             : '<div class="empty-state">Todavía no hay más personas en Lab. Comparte el link de la app para que se sumen, o escribe en la sala pública.</div>';
+  }
+  function wire(){
+    document.querySelectorAll('#new-convo-list .pick-row').forEach(row=>{
+      row.addEventListener('click', ()=>{ closeSheet(); openThread(dmConvId(row.dataset.pid), row.dataset.name, 'dm'); });
+    });
+  }
+  let initial = [];
+  try{ initial = await searchUsers(''); }
+  catch(e){ closeSheet(); toast('No se pudo cargar la lista de personas'); return; }
+  const body = document.getElementById('sheet-body');
+  if(!body) return;
+  body.innerHTML =
+    '<input class="share-comment" id="convo-search" type="text" placeholder="Buscar por nombre o código (Jose#4821)…" autocomplete="off" style="margin-top:0;">' +
+    '<div id="new-convo-list" style="margin-top:8px;">'+listHtml(initial, '')+'</div>';
+  wire();
+  let latest = 0;
+  document.getElementById('convo-search').addEventListener('input', debounce(async e=>{
+    const q = e.target.value.trim();
+    const ticket = ++latest;
+    try{
+      const users = await searchUsers(q);
+      if(ticket !== latest) return;
+      const list = document.getElementById('new-convo-list');
+      if(!list) return;
+      list.innerHTML = listHtml(users, q);
+      wire();
+    } catch(err){ /* mantiene la lista anterior */ }
+  }, 250));
+}
+
+function bubbleHtml(m){
+  const mine = m.senderId === session.publicId;
+  const p = m.paperId ? papers.find(pp=>pp.id===m.paperId) : null;
+  const attach = p ? '<div class="attach" data-pid="'+p.id+'">📄 '+esc(p.title.es)+'</div>' : '';
+  const author = mine ? '' : '<span class="author">'+esc(m.senderName)+'</span>';
+  return '<div class="bubble '+(mine?'me':'them')+'">'+author+(m.text?esc(m.text):'')+attach+'</div>';
+}
+function appendMessages(msgs){
+  const box = document.getElementById('thread-messages');
+  const fresh = msgs.filter(m=>m.seq > chatState.renderedSeq);
+  if(!fresh.length) return;
+  const wasEmpty = chatState.renderedSeq === 0;
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 90;
+  const lastMine = fresh[fresh.length-1].senderId === session.publicId;
+  const placeholder = box.querySelector('.empty-state'); if(placeholder) placeholder.remove();
+  box.insertAdjacentHTML('beforeend', fresh.map(bubbleHtml).join(''));
+  chatState.renderedSeq = fresh[fresh.length-1].seq;
+  box.querySelectorAll('.attach:not([data-w])').forEach(a=>{
+    a.dataset.w = '1';
+    a.addEventListener('click', ()=> openReader(a.dataset.pid));
+  });
+  if(wasEmpty || nearBottom || lastMine) box.scrollTop = box.scrollHeight;
+}
+async function pollThread(initial){
+  const convId = chatState.convId;
+  if(!convId) return;
+  try{
+    const data = await api('/api/chat/messages?conv='+encodeURIComponent(convId)+'&device='+encodeURIComponent(getDeviceId())+'&after='+chatState.renderedSeq);
+    if(convId !== chatState.convId) return;
+    if(initial && data.messages.length===0){
+      document.getElementById('thread-messages').innerHTML = '<div class="empty-state">Todavía no hay mensajes. ¡Escribe el primero!</div>';
+    }
+    appendMessages(data.messages);
+    if(data.messages.length) refreshInbox();
+  } catch(e){
+    if(initial){
+      document.getElementById('thread-messages').innerHTML = '<div class="empty-state">No se pudo cargar la conversación.</div>';
+    }
+  }
+}
+async function openThread(convId, title, kind){
+  leaveThread();
+  chatState.convId = convId; chatState.kind = kind; chatState.renderedSeq = 0;
+  const av = document.getElementById('thread-avatar');
+  av.className = 'avatar '+(kind==='general'?'group':'');
+  av.textContent = kind==='general' ? 'CL' : (initials(title)||'?');
+  document.getElementById('thread-name').textContent = title;
+  document.getElementById('thread-pinned').innerHTML = '';
+  document.getElementById('thread-messages').innerHTML = '<div class="empty-state">Cargando…</div>';
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-thread').classList.add('active');
+  await pollThread(true);
+  if(chatState.convId !== convId) return;
+  chatState.threadTimer = setInterval(()=>{ if(!document.hidden) pollThread(false); }, 4000);
 }
-function renderThreadPinned(conv){
-  const el = document.getElementById('thread-pinned');
-  if(!conv.pinnedPaperId){ el.innerHTML=''; return; }
-  const p = papers.find(pp=>pp.id===conv.pinnedPaperId);
-  el.innerHTML = `<div class="pinned-paper" id="pinned-open"><h4>${p.title.es}</h4><div class="meta">${p.authors} · DOI ${p.doi}</div></div>`;
-  document.getElementById('pinned-open').addEventListener('click', ()=> openReader(p.id));
-}
-function renderThreadMessages(conv){
-  const el = document.getElementById('thread-messages');
-  el.innerHTML = conv.messages.map(m=>{
-    const mine = m.authorId===ME;
-    const authorName = mine? '' : (contactById(conv.participantIds[0]).kind==='group'? contactById(conv.participantIds[0]).name : '');
-    let attach = '';
-    if(m.attachedPaperId){ const p = papers.find(pp=>pp.id===m.attachedPaperId); attach = `<div class="attach" data-pid="${p.id}">📄 ${p.title.es}</div>`; }
-    return `<div class="bubble ${mine?'me':'them'}">${authorName?`<span class="author">${authorName}</span>`:''}${m.text?m.text:''}${attach}</div>`;
-  }).join('');
-  el.scrollTop = el.scrollHeight;
-  el.querySelectorAll('.attach').forEach(a=> a.addEventListener('click', ()=> openReader(a.dataset.pid)));
+function leaveThread(){
+  clearInterval(chatState.threadTimer);
+  chatState.threadTimer = null;
+  chatState.convId = null;
 }
 document.getElementById('thread-back').innerHTML = icon('back');
 document.getElementById('thread-back').addEventListener('click', ()=> showTab('chat'));
 document.getElementById('thread-send').innerHTML = icon('send');
-function sendThreadMessage(){
+async function sendThreadMessage(){
   const input = document.getElementById('thread-input');
   const text = input.value.trim();
-  if(!text) return;
-  const conv = conversations.find(c=>c.id===openConvId);
-  conv.messages.push({authorId:ME, text}); conv.time = 'ahora';
-  conversations = conversations.filter(c=>c.id!==conv.id); conversations.unshift(conv);
-  input.value=''; renderThreadMessages(conv);
+  const convId = chatState.convId;
+  if(!text || !convId) return;
+  input.value = '';
+  try{
+    const data = await apiPost('/api/chat/messages', { convId, text });
+    if(convId === chatState.convId) appendMessages([data.message]);
+    refreshInbox();
+  } catch(e){
+    input.value = text;
+    toast('No se pudo enviar el mensaje');
+  }
 }
 document.getElementById('thread-send').addEventListener('click', sendThreadMessage);
 document.getElementById('thread-input').addEventListener('keydown', e=>{ if(e.key==='Enter') sendThreadMessage(); });
@@ -1189,13 +1385,22 @@ function renderLibrary(){
 
 /* ================= PROFILE ================= */
 function renderProfile(){
-  document.getElementById('profile-avatar').textContent = initials(session.name);
-  document.getElementById('profile-greeting').textContent = 'Hola! '+session.name;
-  document.getElementById('profile-sub').textContent = session.affiliation;
+  document.getElementById('profile-avatar').textContent = initials(session.name) || '?';
+  document.getElementById('name-value').innerHTML = esc(session.name || 'Sin nombre') + ' ' + icon('chevronDown');
+  document.getElementById('code-value').textContent = session.handle || 'Se asigna al elegir tu nombre';
+  document.getElementById('profile-greeting').textContent = session.name ? 'Hola! '+session.name : 'Hola!';
+  document.getElementById('profile-sub').textContent = [session.handle, session.affiliation].filter(Boolean).join(' · ') || 'Toca «Nombre» para completar tu perfil';
   document.getElementById('interests-value').innerHTML = profile.interestAreas.slice(0,2).join(', ') + (profile.interestAreas.length>2? ` +${profile.interestAreas.length-2}`:'') + ' ' + icon('chevronDown');
   document.getElementById('lang-value').innerHTML = profile.translationLanguage + ' ' + icon('chevronDown');
   document.getElementById('theme-value').innerHTML = THEMES.find(t=>t.id===profile.theme).name + ' ' + icon('chevronDown');
 }
+document.getElementById('row-name').addEventListener('click', ()=> openNameSheet());
+document.getElementById('row-code').addEventListener('click', async ()=>{
+  if(!session.handle){ openNameSheet(); return; }
+  const msg = 'Escríbeme en Lab Papers: busca "' + session.handle + '"';
+  try{ await navigator.clipboard.writeText(session.handle); toast('Código copiado: ' + session.handle); }
+  catch(e){ openSheet({ title:'Tu código', sub:'Pásaselo a tus amigos para que te encuentren.', bodyHtml:'<div style="font-size:22px; text-align:center; padding:18px 0; font-family:\'IBM Plex Mono\',monospace;">'+esc(session.handle)+'</div>' }); }
+});
 document.getElementById('row-interests').addEventListener('click', ()=> goSurvey('retake'));
 document.getElementById('row-lang').addEventListener('click', ()=>{
   const body = `
@@ -1239,6 +1444,7 @@ document.getElementById('row-theme').addEventListener('click', ()=>{
 });
 document.getElementById('row-logout').addEventListener('click', ()=>{
   session.loggedIn = false;
+  stopChatPolling(); leaveThread();
   toast('Sesión cerrada');
   document.querySelectorAll('.stage').forEach(s=>s.classList.remove('active'));
   document.getElementById('stage-login').classList.add('active');
@@ -1372,6 +1578,34 @@ document.getElementById('reader-style').addEventListener('click', ()=>{
     document.documentElement.style.setProperty('--reader-font', readerStyle.fontSize+'px');
   });
 });
+
+/* ================= INSTALAR APP (PWA) ================= */
+let deferredInstall = null;
+function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+function refreshInstallRow(){
+  const row = document.getElementById('row-install');
+  if(row) row.style.display = isStandalone() ? 'none' : '';
+}
+window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); deferredInstall = e; refreshInstallRow(); });
+window.addEventListener('appinstalled', ()=>{ deferredInstall = null; refreshInstallRow(); toast('App instalada'); });
+document.getElementById('row-install').addEventListener('click', async ()=>{
+  if(deferredInstall){
+    deferredInstall.prompt();
+    try{ await deferredInstall.userChoice; }catch(e){}
+    deferredInstall = null; refreshInstallRow();
+    return;
+  }
+  openSheet({ title:'Instalar Lab en tu dispositivo', bodyHtml:
+    '<div style="font-size:14px; line-height:1.6;">' +
+    '<p style="margin:0 0 10px;"><b>iPhone / iPad (Safari):</b> toca el botón Compartir y elige «Añadir a pantalla de inicio».</p>' +
+    '<p style="margin:0 0 10px;"><b>Android (Chrome / Firefox):</b> abre el menú ⋮ y elige «Instalar app» o «Añadir a pantalla de inicio».</p>' +
+    '<p style="margin:0;"><b>Computador (Chrome / Edge):</b> haz clic en el ícono de instalar que aparece al final de la barra de direcciones.</p>' +
+    '</div>' });
+});
+refreshInstallRow();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
+}
 
 /* ================= INIT ================= */
 renderDeck();
