@@ -84,7 +84,8 @@ svg.icon{ display:block; }
 /* ---------- deck ---------- */
 #deck-wrap{ flex:1; position:relative; padding:18px 20px 10px; min-height:0;}
 #deck{ position:absolute; top:18px; left:20px; right:20px; bottom:74px; }
-.card{ position:absolute; inset:0; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; padding:0; display:flex; flex-direction:column; box-shadow:0 10px 22px rgba(33,31,26,0.10); touch-action:pan-y; will-change:transform;}
+.card{ position:absolute; inset:0; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; padding:0; display:flex; flex-direction:column; box-shadow:0 10px 22px rgba(33,31,26,0.10); touch-action:pan-y; will-change:transform; -webkit-user-select:none; user-select:none;}
+.card *{ touch-action:pan-y; }
 .card.idle-nudge{ animation:idleNudge 1.1s cubic-bezier(.2,.7,.3,1); }
 @keyframes idleNudge{
   0%{ transform:translateX(0) rotate(0); }
@@ -715,7 +716,7 @@ function renderDeck(){
       wireCardGestures(card, p.id);
       card.querySelector('[data-act="save"]').addEventListener('click', e=>{ e.stopPropagation(); resetIdleNudge(); openFolderSheet(p.id); });
       card.querySelector('[data-act="share"]').addEventListener('click', e=>{ e.stopPropagation(); resetIdleNudge(); openShareSheet(p.id); });
-      card.addEventListener('click', ()=> openReader(p.id));
+      card.addEventListener('click', ()=>{ if(card.dataset.dragged==='1'){ card.dataset.dragged=''; return; } openReader(p.id); });
     }
     deck.appendChild(card);
   });
@@ -724,24 +725,45 @@ function renderDeck(){
   document.getElementById('deck-next').disabled = deckIndex>=papers.length-1;
 }
 function wireCardGestures(card){
-  let startX=0, startY=0, dx=0, dragging=false;
+  let startX=0, startY=0, dx=0, dragging=false, decided=false, horizontal=false;
+  const THRESHOLD = 70;
   card.addEventListener('pointerdown', e=>{
-    dragging=true; startX=e.clientX; startY=e.clientY; card.setPointerCapture(e.pointerId); card.style.transition='none';
+    dragging=true; decided=false; horizontal=false; dx=0;
+    startX=e.clientX; startY=e.clientY;
+    card.style.transition='none';
     card.classList.remove('idle-nudge');
+    card.dataset.dragged='';
     resetIdleNudge();
   });
   card.addEventListener('pointermove', e=>{
     if(!dragging) return;
     dx = e.clientX-startX; const dy = e.clientY-startY;
-    if(Math.abs(dx) > Math.abs(dy)) card.style.transform = `translateX(${dx}px) rotate(${dx/24}deg)`;
+    if(!decided && (Math.abs(dx)>6 || Math.abs(dy)>6)){
+      decided = true; horizontal = Math.abs(dx) > Math.abs(dy);
+      if(horizontal){ try{ card.setPointerCapture(e.pointerId); }catch(err){} }
+    }
+    if(horizontal){
+      card.dataset.dragged='1';
+      card.style.transform = 'translateX('+dx+'px) rotate('+(dx/24)+'deg)';
+    }
   });
   function endDrag(){
     if(!dragging) return; dragging=false;
-    card.style.transition='transform .25s ease';
-    if(dx > 90 && deckIndex < papers.length-1){ deckIndex++; renderDeck(); }
-    else if(dx < -90 && deckIndex > 0){ deckIndex--; renderDeck(); }
-    else { card.style.transform=''; }
+    const moved = dx;
     dx=0;
+    // Izquierda = siguiente paper, derecha = anterior (igual que las flechas)
+    if(horizontal && moved < -THRESHOLD && deckIndex < papers.length-1){
+      card.style.transition='transform .2s ease-in';
+      card.style.transform='translateX(-120%) rotate(-12deg)';
+      setTimeout(()=>{ deckIndex++; renderDeck(); }, 180);
+    } else if(horizontal && moved > THRESHOLD && deckIndex > 0){
+      card.style.transition='transform .2s ease-in';
+      card.style.transform='translateX(120%) rotate(12deg)';
+      setTimeout(()=>{ deckIndex--; renderDeck(); }, 180);
+    } else {
+      card.style.transition='transform .25s cubic-bezier(.2,.7,.3,1)';
+      card.style.transform='';
+    }
     resetIdleNudge();
   }
   card.addEventListener('pointerup', endDrag);
