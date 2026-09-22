@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="light">
 <title>Lab · Papers</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#3f5d46">
@@ -14,8 +15,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{ --reader-font:17px; }
-*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+:root{ --reader-font:17px; color-scheme:light; }
+button, input, textarea, select{ color:inherit; font-family:inherit; }
+svg{ overflow:visible; }
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation;}
+html,body{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
 html,body{height:100%;}
 body{
   margin:0; font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
@@ -182,7 +186,7 @@ svg.icon{ display:block; }
 .bubble .attach{ margin-top:6px; padding:8px 10px; border-radius:8px; background:rgba(255,255,255,.5); font-size:12.5px; cursor:pointer;}
 .bubble.me .attach{ background:rgba(255,255,255,.16); }
 .composer{ flex:0 0 auto; display:flex; gap:8px; padding:10px 14px; border-top:var(--border-w) solid var(--line);}
-.composer input{ flex:1; border:var(--border-w) solid var(--line); border-radius:100px; padding:10px 15px; font-size:14px; background:var(--paper-2); color:var(--ink);}
+.composer input{ flex:1; border:var(--border-w) solid var(--line); border-radius:100px; padding:10px 15px; font-size:16px; background:var(--paper-2); color:var(--ink);}
 .composer input:focus{ outline:2px solid var(--accent); outline-offset:1px;}
 .composer button{ width:40px; height:40px; border-radius:50%; border:none; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center;}
 
@@ -202,7 +206,7 @@ svg.icon{ display:block; }
 #reader{ position:absolute; inset:0; background:var(--paper); z-index:20; display:flex; flex-direction:column; transform:translateY(100%); transition:transform .32s cubic-bezier(.2,.7,.3,1); color:var(--ink);}
 #reader.open{ transform:translateY(0); }
 .reader-header{ flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:14px 10px; border-bottom:var(--border-w) solid var(--line);}
-.reader-header .rback{ width:36px; height:36px; border:none; background:none; color:var(--ink); display:flex; align-items:center; justify-content:center;}
+.reader-header .rback{ width:40px; height:40px; border:var(--border-w) solid var(--line); border-radius:10px; background:var(--paper-2); color:var(--ink); flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
 .reader-header .rtitle{ flex:1; font-family:'Lora',serif; font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:4px;}
 .rbtn{ width:38px; height:38px; border:none; background:none; color:var(--ink-soft); display:flex; align-items:center; justify-content:center; border-radius:8px;}
 .rbtn.active{ color:var(--accent); background:var(--accent-soft); }
@@ -248,7 +252,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 .pick-row .check{ width:22px; height:22px; border-radius:50%; border:1.5px solid var(--line); display:flex; align-items:center; justify-content:center; color:transparent; flex:0 0 auto;}
 .pick-row.selected .check{ background:var(--accent); border-color:var(--accent); color:#fff;}
 .pick-row.folder .check svg{ width:13px; height:13px; }
-.share-comment{ margin-top:10px; width:100%; border:var(--border-w) solid var(--line); border-radius:9px; padding:10px 12px; font-size:13.5px; resize:none; background:var(--paper-2); color:var(--ink);}
+.share-comment{ margin-top:10px; width:100%; border:var(--border-w) solid var(--line); border-radius:9px; padding:10px 12px; font-size:16px; resize:none; background:var(--paper-2); color:var(--ink);}
 .lang-group-title{ font-size:11.5px; font-weight:600; color:var(--accent); text-transform:none; margin:14px 4px 6px;}
 .lang-row{ display:flex; align-items:center; justify-content:space-between; padding:12px 4px; border-bottom:var(--border-w) solid var(--line); cursor:pointer; font-size:14.5px;}
 .lang-row .check{ color:var(--accent); opacity:0; }
@@ -261,6 +265,8 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 
 #toast{ position:absolute; left:20px; right:20px; bottom:78px; background:var(--ink); color:var(--paper); padding:12px 16px; border-radius:10px; font-size:13.5px; text-align:center; z-index:40; transform:translateY(20px); opacity:0; transition:all .25s; pointer-events:none;}
 #toast.show{ transform:translateY(0); opacity:1; }
+#phone.in-thread #tabbar{ display:none; }
+#phone[data-theme="negro"]{ color-scheme:dark; }
 .compose-bar{ display:block; flex:0 0 auto; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 14px; text-align:left; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; color:var(--muted); font:inherit; font-size:14px; cursor:pointer; }
 .post-text{ white-space:pre-wrap; word-break:break-word; }
 .bubble{ white-space:pre-wrap; word-break:break-word; }
@@ -277,7 +283,6 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="login-mark">Lab</div>
       <div class="login-tag">Descubre, guarda y comparte papers científicos con tu equipo.</div>
       <button class="btn-block primary" id="btn-create-account"></button>
-      <button class="btn-block ghost" id="btn-login"></button>
     </div>
   </section>
 
@@ -359,6 +364,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
     <div class="reader-header">
       <button class="rback" id="reader-back"></button>
       <div class="rtitle" id="reader-title-mini"></div>
+      <button class="rbtn" id="reader-share" aria-label="Compartir"></button>
       <button class="rbtn" id="reader-translate" aria-label="Traducir"></button>
       <button class="rbtn" id="reader-download" aria-label="Descargar"></button>
       <button class="rbtn" id="reader-style" aria-label="Estilo de lectura"></button>
@@ -530,9 +536,7 @@ let folders = [ {id:'fav', name:'Favoritos'}, {id:'f1', name:'Carpeta personal 1
 
 const userState = {};
 papers.forEach(p=> userState[p.id] = {folders:new Set(), downloaded:false, translated:false, read:false});
-userState['p1'].folders.add('fav');
-userState['p2'].folders.add('fav'); userState['p2'].folders.add('f1'); userState['p2'].downloaded = true;
-userState['p4'].folders.add('f2'); userState['p4'].downloaded = true;
+
 
 /* ================= TOAST ================= */
 let toastTimer=null;
@@ -608,13 +612,9 @@ function openNameSheet(onDone){
 function requireIdentity(cb){ if(hasIdentity()) cb(); else openNameSheet(cb); }
 
 /* ================= ONBOARDING ================= */
-document.getElementById('btn-create-account').innerHTML = icon('user')+' Crear mi perfil';
-document.getElementById('btn-login').innerHTML = 'Ya tengo perfil · Entrar';
+document.getElementById('btn-create-account').innerHTML = 'Empezar';
 document.getElementById('btn-create-account').addEventListener('click', ()=>{
-  toast('¡Vamos a crear tu perfil!');
-  goSurvey('onboarding');
-});
-document.getElementById('btn-login').addEventListener('click', ()=>{
+  // Solo se necesita un nombre: goApp() lo pide si todavía no hay uno.
   session.loggedIn = true; goApp();
 });
 
@@ -1308,17 +1308,21 @@ async function openThread(convId, title, kind){
   document.getElementById('thread-messages').innerHTML = '<div class="empty-state">Cargando…</div>';
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-thread').classList.add('active');
+  document.getElementById('phone').classList.add('in-thread');
+  pushLayer('thread');
   await pollThread(true);
   if(chatState.convId !== convId) return;
   chatState.threadTimer = setInterval(()=>{ if(!document.hidden) pollThread(false); }, 4000);
+  if(!('ontouchstart' in window)) document.getElementById('thread-input').focus();
 }
 function leaveThread(){
+  document.getElementById('phone').classList.remove('in-thread');
   clearInterval(chatState.threadTimer);
   chatState.threadTimer = null;
   chatState.convId = null;
 }
 document.getElementById('thread-back').innerHTML = icon('back');
-document.getElementById('thread-back').addEventListener('click', ()=> showTab('chat'));
+document.getElementById('thread-back').addEventListener('click', ()=> backLayer('thread', ()=> showTab('chat')));
 document.getElementById('thread-send').innerHTML = icon('send');
 async function sendThreadMessage(){
   const input = document.getElementById('thread-input');
@@ -1450,6 +1454,26 @@ document.getElementById('row-logout').addEventListener('click', ()=>{
   document.getElementById('stage-login').classList.add('active');
 });
 
+/* ================= NAVEGACIÓN "ATRÁS" (gesto/botón del celular) ================= */
+const layers = [];
+function pushLayer(name){
+  if(layers[layers.length-1] === name) return;
+  layers.push(name);
+  try{ history.pushState({ lab:name }, ''); }catch(e){}
+}
+function backLayer(name, fallback){
+  if(layers.includes(name)){ try{ history.back(); return; }catch(e){} }
+  fallback();
+}
+function closeReaderView(){
+  document.getElementById('reader').classList.remove('open'); updateTabDots(); resetIdleNudge();
+}
+window.addEventListener('popstate', ()=>{
+  const name = layers.pop();
+  if(name === 'reader') closeReaderView();
+  else if(name === 'thread' && chatState.convId) showTab('chat');
+});
+
 /* ================= READER ================= */
 let readerPaperId = null;
 function openReader(id){
@@ -1462,6 +1486,7 @@ function openReader(id){
   renderReaderBody();
   document.getElementById('reader').classList.add('open');
   clearTimeout(idleNudgeTimer);
+  pushLayer('reader');
 }
 function renderReaderBody(){
   const p = papers.find(pp=>pp.id===readerPaperId);
@@ -1491,10 +1516,9 @@ function renderReaderBody(){
   }
 }
 document.getElementById('reader-back').innerHTML = icon('back');
-document.getElementById('reader-back').addEventListener('click', ()=>{
-  document.getElementById('reader').classList.remove('open'); updateTabDots();
-  resetIdleNudge();
-});
+document.getElementById('reader-back').addEventListener('click', ()=> backLayer('reader', closeReaderView));
+document.getElementById('reader-share').innerHTML = icon('share');
+document.getElementById('reader-share').addEventListener('click', ()=> openShareSheet(readerPaperId));
 document.getElementById('reader-translate').innerHTML = icon('translate');
 document.getElementById('reader-translate').addEventListener('click', ()=>{
   const st = userState[readerPaperId]; st.translated = !st.translated;
@@ -1607,8 +1631,66 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
 }
 
+['gesturestart','gesturechange','gestureend'].forEach(t=> document.addEventListener(t, e=> e.preventDefault()));
+
+/* ================= GUARDADO LOCAL (favoritos, carpetas, preferencias) ================= */
+// Todo esto vive en el navegador de cada persona: al salir y volver a entrar se recupera solo.
+const STATE_KEY = 'lab_state_v1';
+let lastSavedState = '';
+function snapshotState(){
+  const us = {};
+  Object.keys(userState).forEach(id=>{
+    const u = userState[id];
+    us[id] = { folders:Array.from(u.folders), downloaded:u.downloaded, translated:u.translated, read:u.read };
+  });
+  return JSON.stringify({ v:1, folders, userState:us,
+    profile:{ interestAreas:profile.interestAreas, translationLanguage:profile.translationLanguage, appLanguage:profile.appLanguage, theme:profile.theme },
+    readerStyle });
+}
+function saveLocalState(){
+  const snap = snapshotState();
+  if(snap === lastSavedState) return;
+  lastSavedState = snap;
+  lsSet(STATE_KEY, snap);
+}
+function loadLocalState(){
+  const raw = lsGet(STATE_KEY);
+  if(!raw) return;
+  try{
+    const d = JSON.parse(raw);
+    if(Array.isArray(d.folders) && d.folders.every(f=>f && typeof f.id==='string' && typeof f.name==='string')) folders = d.folders;
+    if(d.userState){
+      Object.keys(userState).forEach(id=>{
+        const u = d.userState[id]; if(!u) return;
+        userState[id].folders = new Set(Array.isArray(u.folders) ? u.folders : []);
+        userState[id].downloaded = !!u.downloaded;
+        userState[id].translated = !!u.translated;
+        userState[id].read = !!u.read;
+      });
+    }
+    if(d.profile){
+      if(Array.isArray(d.profile.interestAreas) && d.profile.interestAreas.length) profile.interestAreas = d.profile.interestAreas;
+      ['translationLanguage','appLanguage'].forEach(k=>{ if(typeof d.profile[k]==='string') profile[k] = d.profile[k]; });
+      if(THEMES.some(t=>t.id===d.profile.theme)) profile.theme = d.profile.theme;
+    }
+    if(d.readerStyle){
+      if(['claro','sepia','oscuro'].includes(d.readerStyle.theme)) readerStyle.theme = d.readerStyle.theme;
+      const fs = +d.readerStyle.fontSize; if(fs>=14 && fs<=22) readerStyle.fontSize = fs;
+    }
+    lastSavedState = raw;
+  } catch(e){ /* datos corruptos: se ignoran y se parte de cero */ }
+  document.getElementById('phone').setAttribute('data-theme', profile.theme);
+  document.documentElement.style.setProperty('--reader-font', readerStyle.fontSize+'px');
+}
+loadLocalState();
+setInterval(saveLocalState, 1500);
+window.addEventListener('pagehide', saveLocalState);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) saveLocalState(); });
+try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+
 /* ================= INIT ================= */
 renderDeck();
+if(hasIdentity()){ session.loggedIn = true; goApp(); }
 updateTabDots();
 </script>
 </body>
