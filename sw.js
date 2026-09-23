@@ -1,4 +1,4 @@
-// Service worker de Lab · Papers: permite instalar la app y abrirla sin conexión.
+// Service worker de Abstracta: permite instalar la app y abrirla sin conexión.
 // Nunca cachea /api/ (los datos compartidos siempre vienen de la red).
 const CACHE = 'lab-papers-v1';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];

@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="color-scheme" content="light">
-<title>Lab · Papers</title>
+<title>Abstracta</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#3f5d46">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Lab">
+<meta name="apple-mobile-web-app-title" content="Abstracta">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -86,7 +86,7 @@ svg.icon{ display:block; }
 /* ---------- login / survey ---------- */
 .stage-content{ flex:1; display:flex; flex-direction:column; justify-content:center; padding:30px 30px 60px; }
 .stage-content.top{ justify-content:flex-start; padding-top:50px; }
-.login-mark{ font-family:'Lora',serif; font-style:italic; font-weight:600; font-size:40px; text-align:center; margin-bottom:6px;}
+.login-mark{ font-family:'Lora',serif; font-style:italic; font-weight:600; font-size:clamp(34px, 11vw, 46px); text-align:center; margin-bottom:6px;}
 .login-tag{ text-align:center; color:var(--muted); font-size:14px; margin-bottom:46px; line-height:1.5;}
 .btn-block{ width:100%; padding:14px; border-radius:10px; border:var(--border-w) solid var(--line); background:var(--paper); font-size:14.5px; font-weight:600; color:var(--ink); margin-bottom:12px; display:flex; align-items:center; justify-content:center; gap:9px;}
 .btn-block.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
@@ -285,7 +285,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
   <!-- ===== ONBOARDING ===== -->
   <section id="stage-login" class="stage active">
     <div class="stage-content">
-      <div class="login-mark">Lab</div>
+      <div class="login-mark">Abstracta</div>
       <div class="login-tag">Descubre, guarda y comparte papers científicos con tu equipo.</div>
       <button class="btn-block primary" id="btn-create-account"></button>
     </div>
@@ -302,7 +302,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
   <!-- ===== APP ===== -->
   <section id="screen-home" class="screen active">
     <div class="topbar">
-      <div class="wordmark">Lab</div>
+      <div class="wordmark">Abstracta</div>
       <div class="helptext">Desliza para pasar de paper · toca la tarjeta para leerla completa</div>
     </div>
     <div id="deck-wrap">
@@ -791,9 +791,12 @@ function renderDeck(){
 }
 function wireCardGestures(card){
   let startX=0, startY=0, dx=0, dragging=false, decided=false, horizontal=false;
-  const THRESHOLD = 70;
+  const THRESHOLD = 36;      // px para cambiar de paper
+  const FLICK_SPEED = 0.2;    // px/ms: un gesto rápido y corto también cuenta
+  const FLICK_MIN = 14;       // px mínimos para considerar el gesto rápido
+  let t0 = 0;
   card.addEventListener('pointerdown', e=>{
-    dragging=true; decided=false; horizontal=false; dx=0;
+    dragging=true; decided=false; horizontal=false; dx=0; t0 = performance.now();
     startX=e.clientX; startY=e.clientY;
     card.style.transition='none';
     card.classList.remove('idle-nudge');
@@ -803,8 +806,8 @@ function wireCardGestures(card){
   card.addEventListener('pointermove', e=>{
     if(!dragging) return;
     dx = e.clientX-startX; const dy = e.clientY-startY;
-    if(!decided && (Math.abs(dx)>6 || Math.abs(dy)>6)){
-      decided = true; horizontal = Math.abs(dx) > Math.abs(dy);
+    if(!decided && (Math.abs(dx)>4 || Math.abs(dy)>4)){
+      decided = true; horizontal = Math.abs(dx) > Math.abs(dy) * 0.8;
       if(horizontal){ try{ card.setPointerCapture(e.pointerId); }catch(err){} }
     }
     if(horizontal){
@@ -815,13 +818,15 @@ function wireCardGestures(card){
   function endDrag(){
     if(!dragging) return; dragging=false;
     const moved = dx;
+    const speed = Math.abs(moved) / Math.max(performance.now() - t0, 1);
+    const flick = Math.abs(moved) >= FLICK_MIN && speed >= FLICK_SPEED;
     dx=0;
     // Izquierda = siguiente paper, derecha = anterior (igual que las flechas)
-    if(horizontal && moved < -THRESHOLD && deckIndex < papers.length-1){
+    if(horizontal && (moved < -THRESHOLD || (flick && moved < 0)) && deckIndex < papers.length-1){
       card.style.transition='transform .2s ease-in';
       card.style.transform='translateX(-120%) rotate(-12deg)';
       setTimeout(()=>{ deckIndex++; renderDeck(); }, 180);
-    } else if(horizontal && moved > THRESHOLD && deckIndex > 0){
+    } else if(horizontal && (moved > THRESHOLD || (flick && moved > 0)) && deckIndex > 0){
       card.style.transition='transform .2s ease-in';
       card.style.transform='translateX(120%) rotate(12deg)';
       setTimeout(()=>{ deckIndex--; renderDeck(); }, 180);
@@ -901,7 +906,7 @@ function openShareSheet(paperId){
       <div class="ico">${icon('feed')}</div><div class="info"><div class="n">Comunidad (público)</div><div class="s">Lo verá todo Chile en la pestaña Social</div></div>
     </div>
     <div class="pick-row" id="share-inapp">
-      <div class="ico">${icon('chat')}</div><div class="info"><div class="n">Mensajería de Lab</div><div class="s">Enviar a personas o a la sala pública</div></div>
+      <div class="ico">${icon('chat')}</div><div class="info"><div class="n">Mensajería de Abstracta</div><div class="s">Enviar a personas o a la sala pública</div></div>
     </div>
     <a class="pick-row" href="${waUrl}" target="_blank" rel="noopener" id="share-wa">
       <div class="ico">${icon('whatsapp')}</div><div class="info"><div class="n">WhatsApp</div><div class="s">Enviar por WhatsApp</div></div>
@@ -921,7 +926,7 @@ function openSharePublicSheet(paperId){
     const body = `
       <div class="pinned-paper" style="margin:0 0 12px; cursor:default;"><h4>${esc(p.title.es)}</h4><div class="meta">${esc(p.authors)}</div></div>
       <textarea class="share-comment" id="public-comment" rows="3" maxlength="2000" placeholder="¿Qué te pareció? (opcional)"></textarea>`;
-    openSheet({ title:'Publicar en la comunidad', sub:'Lo verá cualquier persona que use Lab.', bodyHtml: body, footerText:'Publicar',
+    openSheet({ title:'Publicar en la comunidad', sub:'Lo verá cualquier persona que use Abstracta.', bodyHtml: body, footerText:'Publicar',
       onConfirm: async ()=>{
         const text = document.getElementById('public-comment').value.trim();
         try{
@@ -934,7 +939,7 @@ function openSharePublicSheet(paperId){
 }
 function openShareContactsSheet(paperId){
   requireIdentity(async ()=>{
-    openSheet({ title:'Enviar por mensajería de Lab', bodyHtml:'<div class="empty-state">Cargando personas…</div>' });
+    openSheet({ title:'Enviar por mensajería de Abstracta', bodyHtml:'<div class="empty-state">Cargando personas…</div>' });
     let users = [];
     try{ users = await searchUsers(''); }
     catch(e){ closeSheet(); toast('No se pudo cargar la lista de personas'); return; }
@@ -964,7 +969,7 @@ function openShareContactsSheet(paperId){
       <div id="share-contacts" style="margin-top:8px;">${listHtml('')}</div>
       <textarea class="share-comment" id="share-comment" rows="2" maxlength="1000" placeholder="Añade un comentario (opcional)"></textarea>`;
     openSheet({
-      title:'Enviar por mensajería de Lab', bodyHtml: body, footerText:'Enviar',
+      title:'Enviar por mensajería de Abstracta', bodyHtml: body, footerText:'Enviar',
       onConfirm: async ()=>{
         if(sel.size===0){ toast('Elige al menos un destinatario'); return; }
         const comment = document.getElementById('share-comment').value.trim();
@@ -1069,11 +1074,13 @@ function renderSocialFeed(){
 }
 document.getElementById('compose-open').addEventListener('click', ()=> requireIdentity(()=> openComposeSheet()));
 function openComposeSheet(){
-  const opts = '<option value="">Sin paper</option>' + papers.map(p=>'<option value="'+p.id+'">'+esc(p.title.es)+'</option>').join('');
+  const saved = papers.filter(p=>userState[p.id] && userState[p.id].folders.size>0);
+  const opts = '<option value="">Sin paper</option>' + saved.map(p=>'<option value="'+p.id+'">'+esc(p.title.es)+'</option>').join('');
+  const hint = saved.length ? '' : '<div style="font-size:12.5px; color:var(--muted); margin-top:6px;">Guarda papers en tu biblioteca (con el corazón) para poder adjuntarlos aquí.</div>';
   const body =
     '<textarea class="share-comment" id="compose-text" rows="4" maxlength="2000" placeholder="¿Qué quieres compartir con la comunidad?" style="margin-top:0;"></textarea>' +
-    '<select class="share-comment" id="compose-paper">'+opts+'</select>';
-  openSheet({ title:'Nueva publicación', sub:'La verá cualquier persona que use Lab.', bodyHtml: body, footerText:'Publicar',
+    '<select class="share-comment" id="compose-paper">'+opts+'</select>' + hint;
+  openSheet({ title:'Nueva publicación', sub:'La verá cualquier persona que use Abstracta.', bodyHtml: body, footerText:'Publicar',
     onConfirm: async ()=>{
       const text = document.getElementById('compose-text').value.trim();
       const paperId = document.getElementById('compose-paper').value || null;
@@ -1180,7 +1187,7 @@ function startChatPolling(){
   }, 30000);
 }
 function previewOf(last, kind){
-  if(!last) return kind==='general' ? 'Todos los que usan Lab en Chile. Escribe el primero.' : '';
+  if(!last) return kind==='general' ? 'Todos los que usan Abstracta en Chile. Escribe el primero.' : '';
   const mine = last.senderId === session.publicId;
   const who = mine ? 'Tú: ' : (kind==='general' ? esc(last.senderName)+': ' : '');
   if(last.text) return who + esc(last.text);
@@ -1231,7 +1238,7 @@ async function openNewConvoPicker(){
       </div>`).join('');
     if(rows) return rows;
     return q ? '<div class="empty-state">Nadie coincide con esa búsqueda.</div>'
-             : '<div class="empty-state">Todavía no hay más personas en Lab. Comparte el link de la app para que se sumen, o escribe en la sala pública.</div>';
+             : '<div class="empty-state">Todavía no hay más personas en Abstracta. Comparte el link de la app para que se sumen, o escribe en la sala pública.</div>';
   }
   function wire(){
     document.querySelectorAll('#new-convo-list .pick-row').forEach(row=>{
@@ -1406,7 +1413,7 @@ function renderProfile(){
 document.getElementById('row-name').addEventListener('click', ()=> openNameSheet());
 document.getElementById('row-code').addEventListener('click', async ()=>{
   if(!session.handle){ openNameSheet(); return; }
-  const msg = 'Escríbeme en Lab Papers: busca "' + session.handle + '"';
+  const msg = 'Escríbeme en Abstracta: busca "' + session.handle + '"';
   try{ await navigator.clipboard.writeText(session.handle); toast('Código copiado: ' + session.handle); }
   catch(e){ openSheet({ title:'Tu código', sub:'Pásaselo a tus amigos para que te encuentren.', bodyHtml:'<div style="font-size:22px; text-align:center; padding:18px 0; font-family:\'IBM Plex Mono\',monospace;">'+esc(session.handle)+'</div>' }); }
 });
@@ -1624,7 +1631,7 @@ document.getElementById('row-install').addEventListener('click', async ()=>{
     deferredInstall = null; refreshInstallRow();
     return;
   }
-  openSheet({ title:'Instalar Lab en tu dispositivo', bodyHtml:
+  openSheet({ title:'Instalar Abstracta en tu dispositivo', bodyHtml:
     '<div style="font-size:14px; line-height:1.6;">' +
     '<p style="margin:0 0 10px;"><b>iPhone / iPad (Safari):</b> toca el botón Compartir y elige «Añadir a pantalla de inicio».</p>' +
     '<p style="margin:0 0 10px;"><b>Android (Chrome / Firefox):</b> abre el menú ⋮ y elige «Instalar app» o «Añadir a pantalla de inicio».</p>' +

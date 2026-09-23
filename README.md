@@ -1,4 +1,4 @@
-# Lab · Papers
+# Abstracta
 
 Prototipo de app móvil para descubrir, guardar, leer y discutir papers científicos en comunidad.
 Todo corre sobre Cloudflare: hosting en Pages, API en Pages Functions y base de datos en D1.
