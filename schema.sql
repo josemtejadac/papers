@@ -69,3 +69,11 @@ CREATE TABLE IF NOT EXISTS replies (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_replies_post ON replies (post_id);
+CREATE TABLE IF NOT EXISTS paper_translations (
+  arxiv_id TEXT NOT NULL,
+  lang TEXT NOT NULL,
+  title TEXT NOT NULL,
+  abstract TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (arxiv_id, lang)
+);

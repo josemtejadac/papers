@@ -272,12 +272,20 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 #toast.show{ transform:translateY(0); opacity:1; }
 #phone.in-thread #tabbar{ display:none; }
 #phone[data-theme="negro"]{ color-scheme:dark; }
+.home-search{ display:flex; gap:8px; padding:4px 20px 14px; flex:0 0 auto; }
+.home-search input{ flex:1; border:var(--border-w) solid var(--line); border-radius:100px; padding:9px 15px; font-size:16px; background:var(--paper-2); color:var(--ink); }
+.home-search button{ border:var(--border-w) solid var(--line); background:var(--paper); color:var(--ink-soft); border-radius:100px; padding:0 16px; font-size:13px; white-space:nowrap; }
+.home-query-tag{ padding:0 20px 10px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+.home-query-tag button{ border:none; background:none; color:var(--accent); font-size:12px; text-decoration:underline; padding:0; }
+.deck-state{ margin:auto; text-align:center; padding:40px 30px; color:var(--muted); font-size:14px; line-height:1.6; }
+.pdf-cta{ display:block; text-align:center; text-decoration:none; margin-top:18px; }
+.reader-ext-link{ display:block; text-align:center; margin-top:8px; font-size:12.5px; color:var(--muted); }
+.arxiv-credit{ font-size:11px; color:var(--muted); text-align:center; padding:18px 24px 6px; line-height:1.5; }
 .compose-bar{ display:block; flex:0 0 auto; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 14px; text-align:left; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; color:var(--muted); font:inherit; font-size:14px; cursor:pointer; }
 .post-text{ white-space:pre-wrap; word-break:break-word; }
 .bubble{ white-space:pre-wrap; word-break:break-word; }
 .setting-row .value#name-value{ max-width:170px; text-align:right; justify-content:flex-end; }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div id="phone" data-theme="normal">
@@ -303,8 +311,13 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
   <section id="screen-home" class="screen active">
     <div class="topbar">
       <div class="wordmark">Abstracta</div>
-      <div class="helptext">Desliza para pasar de paper · toca la tarjeta para leerla completa</div>
+      <div class="helptext">Desliza · toca la tarjeta para leerla</div>
     </div>
+    <div class="home-search">
+      <input id="home-search" type="search" placeholder="Buscar en arXiv (ej. transformers, q-bio.NC)…" autocomplete="off">
+      <button id="home-search-btn">Buscar</button>
+    </div>
+    <div class="home-query-tag" id="home-query-tag" style="display:none;"></div>
     <div id="deck-wrap">
       <div id="deck"></div>
       <div id="deck-nav">
@@ -363,6 +376,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="setting-row" id="row-install"><div class="label">Instalar app</div><div class="value">Añadir a inicio</div></div>
       <div class="setting-row danger" id="row-logout"><div class="label">Cierre de sesión</div></div>
     </div>
+    <div class="arxiv-credit">Gracias a arXiv por el uso de su interoperabilidad de acceso abierto.</div>
   </section>
 
   <div id="reader">
@@ -428,104 +442,74 @@ function icon(name, extraClass){ return '<svg class="icon icon-outline '+(extraC
 
 /* ================= DATA ================= */
 const ME = 'me';
-const papers = [
-{ id:'p1', section:'Bioinformática', citedBy:128,
-  title:{es:'Redes neuronales de grafos para la predicción de estructuras de proteínas', en:'Graph neural networks for protein structure prediction'},
-  authors:'L. Chen, N. Okafor, R. Martins', doi:'10.1101/2025.11.02.598877',
-  keywords:['GNN','proteínas','aprendizaje profundo'],
-  abstract:{es:'Presentamos una arquitectura de redes neuronales de grafos que representa cada residuo como un nodo y cada contacto espacial como una arista, mejorando la predicción de plegamiento en proteínas de secuencia corta. El modelo reduce el error de distancia media en un 14% frente a métodos basados en atención pura, con un costo computacional razonable para flujos de laboratorio.',
-             en:'We introduce a graph neural network architecture that represents each residue as a node and each spatial contact as an edge, improving folding prediction for short-sequence proteins. The model reduces mean distance error by 14% compared to pure attention-based methods, while keeping computational cost reasonable for lab workflows.'},
-  content:{
-    es:['Introducción — La predicción de estructura proteica a partir de la secuencia sigue siendo uno de los problemas centrales de la biología computacional. Los métodos recientes basados en atención capturan relaciones de largo alcance, pero suelen ignorar la geometría local de los contactos entre residuos.',
-        'Métodos — Construimos un grafo por proteína donde cada nodo corresponde a un residuo y cada arista codifica la distancia y el ángulo diedro con sus vecinos espaciales. Entrenamos el modelo sobre 12.000 estructuras de bancos públicos, con validación cruzada por familia de plegamiento.',
-        'Resultados — El modelo alcanza un error de distancia media de 1.8 Å en el conjunto de prueba, un 14% menor que la línea base de atención pura, con mejoras más marcadas en dominios de menos de 120 residuos.',
-        'Discusión — Combinar señales geométricas locales con atención global puede ser más eficiente que depender de una sola. Queda evaluar el modelo en proteínas de membrana, subrepresentadas en el conjunto de entrenamiento actual.'],
-    en:['Introduction — Predicting protein structure from sequence remains one of the central problems in computational biology. Recent attention-based methods capture long-range relationships but often ignore the local geometry of residue contacts.',
-        'Methods — We build one graph per protein where each node is a residue and each edge encodes distance and dihedral angle to spatial neighbors. We trained on 12,000 structures from public repositories, cross-validated by fold family.',
-        'Results — The model reaches a mean distance error of 1.8 Å on the test set, 14% lower than the pure-attention baseline, with larger gains on domains under 120 residues.',
-        'Discussion — Combining local geometric signals with global attention can outperform relying on either alone. Evaluating the model on membrane proteins, underrepresented in the training set, remains open work.']
-  }},
-{ id:'p2', section:'Neurociencia', citedBy:342,
-  title:{es:'Plasticidad sináptica y consolidación de la memoria durante el sueño REM', en:'Synaptic plasticity and memory consolidation during REM sleep'},
-  authors:'A. Beltrán, J. Fassi', doi:'10.1523/JNEURO.2026.0143',
-  keywords:['sueño REM','plasticidad sináptica','hipocampo'],
-  abstract:{es:'Mediante registros electrofisiológicos en modelo murino, mostramos que la fase REM favorece el fortalecimiento selectivo de sinapsis hipocampales reclutadas durante el aprendizaje previo, mientras que las conexiones no relacionadas con la tarea tienden a debilitarse.',
-             en:'Using electrophysiological recordings in a murine model, we show REM sleep selectively strengthens hippocampal synapses recruited during earlier learning, while task-unrelated connections tend to weaken.'},
-  content:{
-    es:['Introducción — El papel del sueño REM en la consolidación de la memoria ha sido debatido por décadas, en parte por la dificultad de registrar actividad sináptica específica sin alterarla.',
-        'Métodos — Registramos potenciales de campo en el hipocampo de ratones durante tareas de reconocimiento espacial y durante el sueño posterior, distinguiendo fases REM y no-REM por electroencefalografía.',
-        'Resultados — Observamos un aumento del 22% en la amplitud de potenciales postsinápticos en sinapsis activas durante la tarea, específicamente en episodios REM, sin cambios equivalentes en sinapsis no relacionadas.',
-        'Discusión — Los hallazgos apoyan un mecanismo de etiquetado sináptico selectivo durante REM, aunque se necesitan más estudios para saber si el efecto se generaliza a tareas no espaciales.'],
-    en:['Introduction — The role of REM sleep in memory consolidation has been debated for decades, partly due to the difficulty of recording synapse-specific activity without disrupting it.',
-        'Methods — We recorded hippocampal field potentials in mice during spatial recognition tasks and subsequent sleep, distinguishing REM and non-REM phases via EEG.',
-        'Results — We observed a 22% increase in postsynaptic potential amplitude at task-active synapses, specifically during REM episodes, with no equivalent change elsewhere.',
-        'Discussion — Findings support a selective synaptic tagging mechanism during REM, though further studies are needed to see if the effect generalizes to non-spatial tasks.']
-  }},
-{ id:'p3', section:'Aprendizaje automático', citedBy:57,
-  title:{es:'Un límite superior más ajustado para la complejidad de muestra en aprendizaje por refuerzo offline', en:'A tighter sample complexity bound for offline reinforcement learning'},
-  authors:'T. Ibarra, S. Wren', doi:'10.48550/arXiv.2026.03291',
-  keywords:['RL offline','complejidad de muestra','teoría'],
-  abstract:{es:'Derivamos un límite superior más ajustado para la complejidad de muestra en aprendizaje por refuerzo offline bajo cobertura parcial del conjunto de datos, mejorando en un factor logarítmico los resultados previos para políticas casi óptimas.',
-             en:'We derive a tighter sample complexity bound for offline reinforcement learning under partial data coverage, improving prior results for near-optimal policies by a logarithmic factor.'},
-  content:{
-    es:['Introducción — El aprendizaje por refuerzo offline promete aprovechar registros históricos sin interacción en línea, pero sus garantías dependen de cuán bien el conjunto de datos cubre el espacio de estados.',
-        'Métodos — Analizamos un estimador de valor pesado por importancia con regularización adaptativa, derivando cotas de concentración para el caso de cobertura parcial.',
-        'Resultados — El límite obtenido mejora en un factor de log(1/δ) los resultados previos bajo los mismos supuestos, sin requerir conocer la política de comportamiento.',
-        'Discusión — El resultado es principalmente teórico; validar su relevancia práctica requiere experimentos en conjuntos offline reales, lo que dejamos como trabajo futuro.'],
-    en:['Introduction — Offline reinforcement learning promises to leverage historical logs without online interaction, but its guarantees depend on how well the dataset covers the state space.',
-        'Methods — We analyze an importance-weighted value estimator with adaptive regularization, deriving concentration bounds for the partial-coverage case.',
-        'Results — The bound improves on prior results by a factor of log(1/δ) under the same assumptions, without requiring knowledge of the behavior policy.',
-        'Discussion — The result is primarily theoretical; validating its practical relevance requires experiments on real offline datasets, left as future work.']
-  }},
-{ id:'p4', section:'Inmunología', citedBy:210,
-  title:{es:'Microbiota intestinal y su rol en la modulación de la respuesta inmune innata', en:'Gut microbiota and its role in modulating innate immune response'},
-  authors:'M. Rojas, P. Duarte, F. Correa', doi:'10.1016/j.cell.2026.01.019',
-  keywords:['microbiota','inmunidad innata','intestino'],
-  abstract:{es:'Caracterizamos cómo tres especies bacterianas comensales modulan la producción de citoquinas por macrófagos intestinales, proponiendo un mecanismo dependiente de metabolitos de cadena corta que podría explicar diferencias individuales en la respuesta a infecciones entéricas.',
-             en:'We characterize how three commensal bacterial species modulate cytokine production by intestinal macrophages, proposing a short-chain-metabolite-dependent mechanism for individual differences in enteric infection response.'},
-  content:{
-    es:['Introducción — La composición de la microbiota intestinal varía ampliamente entre individuos, y buena parte de esa variación podría explicar diferencias en la susceptibilidad a infecciones entéricas.',
-        'Métodos — Colonizamos ratones libres de gérmenes con combinaciones definidas de tres especies comensales y medimos citoquinas de macrófagos intestinales tras un desafío con patógenos entéricos.',
-        'Resultados — La combinación de las tres especies redujo la producción de citoquinas proinflamatorias en un 35% frente a ratones monocolonizados, efecto que se perdió al inhibir ácidos grasos de cadena corta.',
-        'Discusión — La diversidad microbiana, más que una especie particular, podría ser el factor protector relevante, aunque el mecanismo exacto de señalización queda por caracterizar.'],
-    en:['Introduction — Gut microbiota composition varies widely across individuals, and much of that variation may explain differences in enteric infection susceptibility.',
-        'Methods — We colonized germ-free mice with defined combinations of three commensal species and measured intestinal macrophage cytokines after an enteric pathogen challenge.',
-        'Results — The three-species combination reduced pro-inflammatory cytokine production by 35% vs. mono-colonized mice, an effect lost when short-chain fatty acid synthesis was inhibited.',
-        'Discussion — Microbial diversity, rather than a single species, may be the relevant protective factor, though the exact signaling mechanism remains uncharacterized.']
-  }},
-{ id:'p5', section:'Astrofísica', citedBy:189,
-  title:{es:'Detección de exoplanetas mediante fotometría de tránsito con redes convolucionales', en:'Exoplanet detection via transit photometry using convolutional networks'},
-  authors:'D. Vidal, K. Nakamura', doi:'10.3847/AJ.2026.0087',
-  keywords:['exoplanetas','fotometría','redes convolucionales'],
-  abstract:{es:'Entrenamos una red convolucional 1D sobre curvas de luz de misiones de tránsito para distinguir señales planetarias de falsos positivos astrofísicos, alcanzando una precisión comparable a clasificadores humanos expertos con un tiempo de procesamiento 200 veces menor.',
-             en:'We train a 1D convolutional network on transit-mission light curves to distinguish planetary signals from astrophysical false positives, reaching accuracy comparable to expert humans with 200x less processing time.'},
-  content:{
-    es:['Introducción — El volumen de curvas de luz generado por misiones de tránsito ha superado la capacidad de revisión manual, motivando clasificadores automáticos confiables.',
-        'Métodos — Entrenamos una red convolucional 1D sobre curvas de luz normalizadas, con un conjunto etiquetado por astrónomos que incluye tránsitos confirmados, binarias eclipsantes y ruido instrumental.',
-        'Resultados — El clasificador alcanza 96.4% de precisión en el conjunto de prueba, comparable a clasificadores humanos expertos, con un tiempo de inferencia 200 veces menor por curva.',
-        'Discusión — El principal cuello de botella son los falsos positivos por actividad estelar, que el modelo aún confunde con tránsitos poco profundos en estrellas activas.'],
-    en:['Introduction — The volume of light curves from transit missions has outpaced manual review, motivating reliable automated classifiers.',
-        'Methods — We trained a 1D convolutional network on normalized light curves, using a set labeled by astronomers including confirmed transits, eclipsing binaries, and instrumental noise.',
-        'Results — The classifier reaches 96.4% accuracy on the test set, comparable to expert humans, with 200x lower inference time per curve.',
-        'Discussion — The main bottleneck is false positives from stellar activity, still confused with shallow transits in a subset of active stars.']
-  }},
-{ id:'p6', section:'Genética', citedBy:96,
-  title:{es:'Edición génica CRISPR-Cas9 en modelos de fibrosis quística: avances y limitaciones', en:'CRISPR-Cas9 gene editing in cystic fibrosis models: advances and limitations'},
-  authors:'F. Correa, N. Okafor', doi:'10.1038/s41591-2026-0341',
-  keywords:['CRISPR','fibrosis quística','edición génica'],
-  abstract:{es:'Evaluamos la eficiencia y especificidad de la edición CRISPR-Cas9 dirigida a la mutación ΔF508 del gen CFTR en organoides intestinales derivados de pacientes, reportando corrección funcional en el 41% de las células editadas sin eventos de edición fuera de blanco detectables.',
-             en:'We assess CRISPR-Cas9 editing efficiency targeting the ΔF508 CFTR mutation in patient-derived intestinal organoids, reporting functional correction in 41% of edited cells with no detectable off-target events.'},
-  content:{
-    es:['Introducción — La mutación ΔF508 del gen CFTR es la causa más común de fibrosis quística, y su corrección directa ha sido un objetivo terapéutico de larga data.',
-        'Métodos — Generamos organoides intestinales a partir de biopsias de pacientes ΔF508 homocigotos y aplicamos CRISPR-Cas9 con plantilla de reparación, evaluando corrección mediante ensayos de conductancia de cloruro.',
-        'Resultados — Observamos corrección funcional en el 41% de los organoides editados, con recuperación parcial de conductancia, y sin eventos fuera de blanco en los 12 sitios candidatos analizados.',
-        'Discusión — La eficiencia aún es insuficiente para aplicación clínica directa, pero los resultados apoyan la viabilidad del enfoque y motivan optimizar la entrega in vivo.'],
-    en:['Introduction — The ΔF508 CFTR mutation is the most common cause of cystic fibrosis, and its direct correction has long been a therapeutic goal.',
-        'Methods — We generated intestinal organoids from ΔF508-homozygous patient biopsies and applied CRISPR-Cas9 with a repair template, assessing correction via chloride conductance assays.',
-        'Results — We observed functional correction in 41% of edited organoids, with partial conductance recovery, and no off-target events at the 12 candidate sites analyzed.',
-        'Discussion — Correction efficiency remains insufficient for direct clinical use, but results support the approach and motivate optimizing in vivo delivery.']
-  }}
-];
+let papers = [];           // deck actual (resultados de la búsqueda vigente)
+let papersIndex = {};      // id -> paper, todo lo que la app ha visto (persistido en lo que se guarda)
+let homeLoading = false;
+let homeFailed = false;
+let homeQuery = '';        // texto escrito por la persona; vacío = recomendado según sus intereses
+
+// Interés elegido en la encuesta -> categorías de arXiv para la búsqueda por defecto de Home.
+// arXiv no tiene una categoría propia para algunos temas (p. ej. Inmunología); se usa la más cercana.
+const INTEREST_TO_ARXIV = {
+  'Neurociencia': ['q-bio.NC'],
+  'Aprendizaje profundo': ['cs.LG', 'cs.AI'],
+  'Bioinformática': ['q-bio.QM', 'q-bio.GN'],
+  'Inmunología': ['q-bio.CB'],
+  'Astrofísica': ['astro-ph'],
+  'Genética': ['q-bio.GN', 'q-bio.PE'],
+  'Aprendizaje automático': ['cs.LG', 'stat.ML']
+};
+const LANG_CODES = { 'Español':'es', 'Inglés':'en', 'Portugués':'pt', 'Francés':'fr' };
+function langCodeFor(name){ return LANG_CODES[name] || 'es'; }
+
+function ensureUserState(id){
+  if(!userState[id]) userState[id] = { folders:new Set(), downloaded:false, showOriginal:false, read:false };
+  return userState[id];
+}
+function mergePapers(list){
+  (list || []).forEach(p=>{ papersIndex[p.id] = p; ensureUserState(p.id); });
+}
+async function ensurePapersLoaded(ids){
+  const missing = Array.from(new Set((ids||[]).filter(Boolean))).filter(id=>!papersIndex[id]);
+  if(!missing.length) return false;
+  try{
+    const data = await api('/api/papers?ids='+encodeURIComponent(missing.join(','))+'&lang='+encodeURIComponent(langCodeFor(profile.translationLanguage)));
+    mergePapers(data.papers);
+    return true;
+  } catch(e){ return false; }
+}
+function defaultArxivCategories(){
+  const set = new Set();
+  (profile.interestAreas||[]).forEach(i=> (INTEREST_TO_ARXIV[i]||[]).forEach(c=>set.add(c)));
+  if(set.size===0) set.add('cs.AI');
+  return Array.from(set);
+}
+async function loadHomeDeck(query){
+  homeQuery = (query || '').trim();
+  homeLoading = true; homeFailed = false; deckIndex = 0;
+  renderDeck();
+  try{
+    const params = new URLSearchParams();
+    if(homeQuery) params.set('q', homeQuery);
+    else params.set('category', defaultArxivCategories().join(','));
+    params.set('lang', langCodeFor(profile.translationLanguage));
+    params.set('max', '10');
+    const data = await api('/api/papers?'+params.toString());
+    mergePapers(data.papers);
+    papers = data.papers.map(p=>papersIndex[p.id]);
+    homeLoading = false;
+    if(!papers.length) homeFailed = 'empty';
+  } catch(e){
+    homeLoading = false; homeFailed = true; papers = [];
+  }
+  renderDeck();
+  const tag = document.getElementById('home-query-tag');
+  if(homeQuery){ tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
+    const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
+  } else { tag.style.display='none'; tag.innerHTML=''; }
+}
+document.getElementById('home-search-btn').addEventListener('click', ()=> loadHomeDeck(document.getElementById('home-search').value));
+document.getElementById('home-search').addEventListener('keydown', e=>{ if(e.key==='Enter') loadHomeDeck(e.target.value); });
 
 function initials(name){ return name.split(' ').filter(w=>w.length>1).slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
 
@@ -535,7 +519,7 @@ const APP_LANGS = ['Español','Inglés','Portugués'];
 const THEMES = [ {id:'normal', name:'Normal', a:'#3f5d46', b:'#fbf8f0'}, {id:'negro', name:'Negro', a:'#8fbf93', b:'#1e1c17'}, {id:'alto-contraste', name:'Alto contraste', a:'#000000', b:'#fff066'} ];
 
 const session = { loggedIn:false, name:lsGet('lab_name')||'', affiliation:lsGet('lab_aff')||'', publicId:lsGet('lab_pid')||'', handle:lsGet('lab_handle')||'' };
-const profile = { interestAreas:['Neurociencia','Aprendizaje profundo','Bioinformática'], translationLanguage:'Inglés', appLanguage:'Español', theme:'normal' };
+const profile = { interestAreas:['Neurociencia','Aprendizaje profundo','Bioinformática'], translationLanguage:'Español', appLanguage:'Español', theme:'normal' };
 
 let folders = [ {id:'fav', name:'Favoritos'}, {id:'f1', name:'Carpeta personal 1'}, {id:'f2', name:'Carpeta personal 2'} ];
 
@@ -651,6 +635,7 @@ function renderSurveyGrid(){
 }
 document.getElementById('survey-confirm').addEventListener('click', ()=>{
   profile.interestAreas = Array.from(surveySelected);
+  saveLocalState();
   if(surveyMode==='onboarding'){
     toast('Intereses guardados');
     session.loggedIn = true;
@@ -664,6 +649,7 @@ document.getElementById('survey-confirm').addEventListener('click', ()=>{
 function goApp(){
   document.querySelectorAll('.stage').forEach(s=>s.classList.remove('active'));
   showTab('home');
+  loadHomeDeck(homeQuery);
   if(hasIdentity()){
     // Reafirma el nombre en el servidor (mantiene el directorio al día) y arranca el chat.
     registerIdentity(session.name, session.affiliation).then(startChatPolling).catch(startChatPolling);
@@ -751,7 +737,21 @@ function triggerIdleNudge(){
 }
 function renderDeck(){
   const deck = document.getElementById('deck');
+  const nav = document.getElementById('deck-nav');
   deck.innerHTML = '';
+  if(homeLoading){
+    deck.innerHTML = '<div class="deck-state">Buscando en arXiv…</div>';
+    nav.style.display = 'none';
+    return;
+  }
+  if(homeFailed){
+    deck.innerHTML = homeFailed==='empty'
+      ? '<div class="deck-state">No encontramos papers para esa búsqueda. Prueba con otros términos.</div>'
+      : '<div class="deck-state">No se pudo cargar arXiv. Revisa tu conexión e inténtalo de nuevo.</div>';
+    nav.style.display = 'none';
+    return;
+  }
+  nav.style.display = '';
   const visible = papers.slice(deckIndex, deckIndex+3);
   visible.slice().reverse().forEach((p, revIdx)=>{
     const depth = visible.length-1-revIdx;
@@ -760,18 +760,17 @@ function renderDeck(){
     card.style.transform = `translateY(${depth*8}px) scale(${1-depth*0.035})`;
     card.style.zIndex = 10-depth;
     card.style.opacity = depth>1? '0.6':'1';
-    const st = userState[p.id];
+    const st = ensureUserState(p.id);
     const isSaved = st.folders.size>0;
     card.innerHTML = `
       <div class="perf"></div>
       <div class="card-scroll">
-        <div class="section-label">${p.section}</div>
-        <h2>${p.title.es}</h2>
-        <div class="authors">${p.authors}</div>
-        <div class="doi">DOI ${p.doi}</div>
-        <div class="cited">Citado ${p.citedBy} veces</div>
-        <div class="kw-row">${p.keywords.map(k=>`<span class="kw">${k}</span>`).join('')}</div>
-        <div class="abstract">${p.abstract.es}</div>
+        <div class="section-label">${esc(p.section)}</div>
+        <h2>${esc(p.title)}</h2>
+        <div class="authors">${esc(p.authors)}</div>
+        <div class="doi">${p.doi? 'DOI '+esc(p.doi) : 'arXiv:'+esc(p.id)} · ${esc(p.published||'')}</div>
+        <div class="kw-row">${(p.categoryLabels||[]).map(k=>`<span class="kw">${esc(k)}</span>`).join('')}</div>
+        <div class="abstract">${esc(p.abstract)}</div>
       </div>
       <div class="card-footer">
         <button class="icon-btn heart ${isSaved?'active':''}" data-act="save">${icon('heart')}</button>
@@ -785,7 +784,7 @@ function renderDeck(){
     }
     deck.appendChild(card);
   });
-  document.getElementById('deck-counter').textContent = `${deckIndex+1} / ${papers.length}`;
+  document.getElementById('deck-counter').textContent = papers.length ? `${deckIndex+1} / ${papers.length}` : '0 / 0';
   document.getElementById('deck-prev').disabled = deckIndex===0;
   document.getElementById('deck-next').disabled = deckIndex>=papers.length-1;
 }
@@ -870,7 +869,7 @@ function wireFolderRows(paperId){
       const st = userState[paperId];
       if(st.folders.has(fid)){ st.folders.delete(fid); row.classList.remove('selected'); toast('Se quitó de '+folders.find(f=>f.id===fid).name); }
       else { st.folders.add(fid); row.classList.add('selected'); toast('Guardado en '+folders.find(f=>f.id===fid).name); }
-      renderDeck(); updateTabDots();
+      renderDeck(); updateTabDots(); saveLocalState();
     });
   });
   const addRow = document.getElementById('add-folder-row');
@@ -886,7 +885,7 @@ function openCreateFolderSheet(paperIdToAdd){
       const f = { id:'f'+Date.now(), name };
       folders.push(f);
       if(paperIdToAdd){ userState[paperIdToAdd].folders.add(f.id); renderDeck(); }
-      updateTabDots();
+      updateTabDots(); saveLocalState();
       toast('Carpeta creada: '+name);
       if(paperIdToAdd){ openFolderSheet(paperIdToAdd); }
       else { closeSheet(); libFilter = f.id; renderLibrary(); }
@@ -897,10 +896,10 @@ function openCreateFolderSheet(paperIdToAdd){
 
 /* ================= SHARE ================= */
 function openShareSheet(paperId){
-  const p = papers.find(pp=>pp.id===paperId);
-  const shareText = `Te comparto este paper: "${p.title.es}" (${p.authors}) · DOI ${p.doi}`;
+  const p = papersIndex[paperId];
+  const shareText = `Te comparto este paper: "${p.title}" (${p.authors}) · ${p.absUrl}`;
   const waUrl = 'https://wa.me/?text='+encodeURIComponent(shareText);
-  const mailUrl = 'mailto:?subject='+encodeURIComponent('Paper: '+p.title.es)+'&body='+encodeURIComponent(shareText);
+  const mailUrl = 'mailto:?subject='+encodeURIComponent('Paper: '+p.title)+'&body='+encodeURIComponent(shareText);
   const body = `
     <div class="pick-row" id="share-public">
       <div class="ico">${icon('feed')}</div><div class="info"><div class="n">Comunidad (público)</div><div class="s">Lo verá todo Chile en la pestaña Social</div></div>
@@ -922,9 +921,9 @@ function openShareSheet(paperId){
 }
 function openSharePublicSheet(paperId){
   requireIdentity(()=>{
-    const p = papers.find(pp=>pp.id===paperId);
+    const p = papersIndex[paperId];
     const body = `
-      <div class="pinned-paper" style="margin:0 0 12px; cursor:default;"><h4>${esc(p.title.es)}</h4><div class="meta">${esc(p.authors)}</div></div>
+      <div class="pinned-paper" style="margin:0 0 12px; cursor:default;"><h4>${esc(p.title)}</h4><div class="meta">${esc(p.authors)}</div></div>
       <textarea class="share-comment" id="public-comment" rows="3" maxlength="2000" placeholder="¿Qué te pareció? (opcional)"></textarea>`;
     openSheet({ title:'Publicar en la comunidad', sub:'Lo verá cualquier persona que use Abstracta.', bodyHtml: body, footerText:'Publicar',
       onConfirm: async ()=>{
@@ -1022,6 +1021,7 @@ async function loadAndRenderSocialFeed(silent){
     if(silent && sig === socialSig){ socialLoading = false; return; }
     socialSig = sig;
     socialPosts = data.posts;
+    await ensurePapersLoaded(socialPosts.map(p=>p.paperId));
   } catch(e){
     if(!silent || socialPosts.length===0) socialLoadFailed = true;
     else { socialLoading = false; return; }
@@ -1030,7 +1030,7 @@ async function loadAndRenderSocialFeed(silent){
   renderSocialFeed();
 }
 function postCardHtml(post){
-  const paper = post.paperId ? papers.find(p=>p.id===post.paperId) : null;
+  const paper = post.paperId ? papersIndex[post.paperId] : null;
   let quotedHtml = '';
   if(post.quotedPostId){
     const qp = socialPosts.find(x=>x.id===post.quotedPostId);
@@ -1043,7 +1043,7 @@ function postCardHtml(post){
     </div>
     ${post.text ? `<div class="post-text">${esc(post.text)}</div>` : ''}
     ${quotedHtml}
-    ${paper? `<div class="post-paper" data-pid="${paper.id}"><div class="pp-label">${paper.section}</div><h4>${paper.title.es}</h4><div class="pp-meta">${paper.authors}</div></div>` : ''}
+    ${paper? `<div class="post-paper" data-pid="${paper.id}"><div class="pp-label">${esc(paper.section)}</div><h4>${esc(paper.title)}</h4><div class="pp-meta">${esc(paper.authors)}</div></div>` : ''}
     <div class="post-actions">
       <button class="post-act like ${post.likedByMe?'active':''}" data-act="like">${icon('heart')}<span>${post.likes}</span></button>
       <button class="post-act" data-act="reply">${icon('reply')}<span>${post.replies}</span></button>
@@ -1074,8 +1074,8 @@ function renderSocialFeed(){
 }
 document.getElementById('compose-open').addEventListener('click', ()=> requireIdentity(()=> openComposeSheet()));
 function openComposeSheet(){
-  const saved = papers.filter(p=>userState[p.id] && userState[p.id].folders.size>0);
-  const opts = '<option value="">Sin paper</option>' + saved.map(p=>'<option value="'+p.id+'">'+esc(p.title.es)+'</option>').join('');
+  const saved = Object.values(papersIndex).filter(p=>userState[p.id] && userState[p.id].folders.size>0);
+  const opts = '<option value="">Sin paper</option>' + saved.map(p=>'<option value="'+p.id+'">'+esc(p.title)+'</option>').join('');
   const hint = saved.length ? '' : '<div style="font-size:12.5px; color:var(--muted); margin-top:6px;">Guarda papers en tu biblioteca (con el corazón) para poder adjuntarlos aquí.</div>';
   const body =
     '<textarea class="share-comment" id="compose-text" rows="4" maxlength="2000" placeholder="¿Qué quieres compartir con la comunidad?" style="margin-top:0;"></textarea>' +
@@ -1191,8 +1191,8 @@ function previewOf(last, kind){
   const mine = last.senderId === session.publicId;
   const who = mine ? 'Tú: ' : (kind==='general' ? esc(last.senderName)+': ' : '');
   if(last.text) return who + esc(last.text);
-  const p = papers.find(pp=>pp.id===last.paperId);
-  return who + 'Compartió: «' + esc(p ? p.title.es : 'un paper') + '»';
+  const p = papersIndex[last.paperId];
+  return who + 'Compartió: «' + esc(p ? p.title : 'un paper') + '»';
 }
 
 document.getElementById('btn-dm').innerHTML = icon('send')+'<span class="dm-badge" id="dm-badge"></span>';
@@ -1271,15 +1271,16 @@ async function openNewConvoPicker(){
 
 function bubbleHtml(m){
   const mine = m.senderId === session.publicId;
-  const p = m.paperId ? papers.find(pp=>pp.id===m.paperId) : null;
-  const attach = p ? '<div class="attach" data-pid="'+p.id+'">📄 '+esc(p.title.es)+'</div>' : '';
+  const p = m.paperId ? papersIndex[m.paperId] : null;
+  const attach = m.paperId ? ('<div class="attach" data-pid="'+esc(m.paperId)+'">📄 '+esc(p ? p.title : 'Paper')+'</div>') : '';
   const author = mine ? '' : '<span class="author">'+esc(m.senderName)+'</span>';
   return '<div class="bubble '+(mine?'me':'them')+'">'+author+(m.text?esc(m.text):'')+attach+'</div>';
 }
-function appendMessages(msgs){
+async function appendMessages(msgs){
   const box = document.getElementById('thread-messages');
   const fresh = msgs.filter(m=>m.seq > chatState.renderedSeq);
   if(!fresh.length) return;
+  await ensurePapersLoaded(fresh.map(m=>m.paperId));
   const wasEmpty = chatState.renderedSeq === 0;
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 90;
   const lastMine = fresh[fresh.length-1].senderId === session.publicId;
@@ -1301,7 +1302,7 @@ async function pollThread(initial){
     if(initial && data.messages.length===0){
       document.getElementById('thread-messages').innerHTML = '<div class="empty-state">Todavía no hay mensajes. ¡Escribe el primero!</div>';
     }
-    appendMessages(data.messages);
+    await appendMessages(data.messages);
     if(data.messages.length) refreshInbox();
   } catch(e){
     if(initial){
@@ -1371,8 +1372,9 @@ function renderFolderTabs(){
 function renderLibrary(){
   renderFolderTabs();
   const list = document.getElementById('library-list');
-  let items = papers.filter(p=>{
+  let items = Object.values(papersIndex).filter(p=>{
     const st = userState[p.id];
+    if(!st) return false;
     if(libFilter==='all') return st.folders.size>0;
     return st.folders.has(libFilter);
   });
@@ -1391,8 +1393,8 @@ function renderLibrary(){
         ${st.downloaded? `<div class="offline-badge">${icon('download')}</div>` : ''}
       </div>
       <div class="row-body">
-        <h3>${p.title.es}</h3>
-        <div class="meta">${p.authors}<br><span class="mono">DOI ${p.doi}</span></div>
+        <h3>${esc(p.title)}</h3>
+        <div class="meta">${esc(p.authors)}<br><span class="mono">${p.doi? 'DOI '+esc(p.doi) : 'arXiv:'+esc(p.id)}</span></div>
       </div>
     </div>`;
   }).join('')+`</div>`;
@@ -1453,7 +1455,7 @@ document.getElementById('row-theme').addEventListener('click', ()=>{
     row.addEventListener('click', ()=>{
       profile.theme = row.dataset.t;
       document.getElementById('phone').setAttribute('data-theme', profile.theme);
-      renderProfile(); closeSheet();
+      renderProfile(); closeSheet(); saveLocalState();
       toast('Tema: '+THEMES.find(t=>t.id===profile.theme).name);
     });
   });
@@ -1488,40 +1490,54 @@ window.addEventListener('popstate', ()=>{
 
 /* ================= READER ================= */
 let readerPaperId = null;
-function openReader(id){
+async function openReader(id, snapshot){
   readerPaperId = id;
-  userState[id].read = true;
-  const p = papers.find(pp=>pp.id===id);
-  document.getElementById('reader-title-mini').textContent = p.title.es;
-  document.getElementById('reader-translate').classList.toggle('active', userState[id].translated);
-  document.getElementById('reader-download').classList.toggle('active', userState[id].downloaded);
-  renderReaderBody();
+  if(snapshot) mergePapers([snapshot]);
+  ensureUserState(id).read = true;
   document.getElementById('reader').classList.add('open');
   clearTimeout(idleNudgeTimer);
   pushLayer('reader');
+  if(!papersIndex[id]){
+    document.getElementById('reader-title-mini').textContent = 'Cargando…';
+    document.getElementById('reader-body').innerHTML = '<div class="deck-state">Cargando paper…</div>';
+    const ok = await ensurePapersLoaded([id]);
+    if(readerPaperId !== id) return;
+    if(!ok || !papersIndex[id]){
+      document.getElementById('reader-body').innerHTML = '<div class="deck-state">No se pudo cargar este paper.</div>';
+      return;
+    }
+  }
+  const p = papersIndex[id];
+  document.getElementById('reader-title-mini').textContent = p.title;
+  document.getElementById('reader-translate').classList.toggle('active', ensureUserState(id).showOriginal);
+  document.getElementById('reader-download').classList.toggle('active', ensureUserState(id).downloaded);
+  renderReaderBody();
 }
 function renderReaderBody(){
-  const p = papers.find(pp=>pp.id===readerPaperId);
-  const st = userState[readerPaperId];
-  const lang = st.translated ? 'en' : 'es';
+  const p = papersIndex[readerPaperId];
+  if(!p) return;
+  const st = ensureUserState(readerPaperId);
+  const title = st.showOriginal ? (p.titleEn||p.title) : p.title;
+  const abstract = st.showOriginal ? (p.abstractEn||p.abstract) : p.abstract;
   const body = document.getElementById('reader-body');
   body.className = 'reader-body theme-'+readerStyle.theme;
-  const chip = st.translated
-    ? `<div class="translated-chip" id="chip-toggle">${icon('translate')} Traducido a ${profile.translationLanguage} · ver original</div>` : '';
+  const chip = st.showOriginal
+    ? `<div class="translated-chip" id="chip-toggle">${icon('translate')} Mostrando el original en inglés · ver traducción</div>` : '';
   body.innerHTML = `
-    <div class="meta-line">${p.section} · Citado ${p.citedBy} veces</div>
-    <h1>${p.title[lang]}</h1>
-    <div class="meta-line">${p.authors}</div>
-    <div class="meta-line mono">DOI ${p.doi}</div>
-    <div class="kw-row">${p.keywords.map(k=>`<span class="kw">${k}</span>`).join('')}</div>
+    <div class="meta-line">${esc(p.section)} · ${esc(p.published||'')}</div>
+    <h1>${esc(title)}</h1>
+    <div class="meta-line">${esc(p.authors)}</div>
+    <div class="meta-line mono">${p.doi? 'DOI '+esc(p.doi) : 'arXiv:'+esc(p.id)}</div>
+    <div class="kw-row">${(p.categoryLabels||[]).map(k=>`<span class="kw">${esc(k)}</span>`).join('')}</div>
     ${chip}
-    <div class="abstract-label">Abstract</div>
-    <p>${p.abstract[lang]}</p>
-    ${p.content[lang].map(par=>`<p>${par}</p>`).join('')}
+    <div class="abstract-label">Resumen</div>
+    <p>${esc(abstract)}</p>
+    <a class="btn-primary pdf-cta" href="${p.pdfUrl}" target="_blank" rel="noopener">Abrir el PDF completo en arXiv</a>
+    <a class="reader-ext-link" href="${p.absUrl}" target="_blank" rel="noopener">Ver la página del paper en arxiv.org</a>
   `;
-  if(st.translated){
+  if(st.showOriginal){
     document.getElementById('chip-toggle').addEventListener('click', ()=>{
-      userState[readerPaperId].translated = false;
+      ensureUserState(readerPaperId).showOriginal = false;
       document.getElementById('reader-translate').classList.remove('active');
       renderReaderBody();
     });
@@ -1533,63 +1549,22 @@ document.getElementById('reader-share').innerHTML = icon('share');
 document.getElementById('reader-share').addEventListener('click', ()=> openShareSheet(readerPaperId));
 document.getElementById('reader-translate').innerHTML = icon('translate');
 document.getElementById('reader-translate').addEventListener('click', ()=>{
-  const st = userState[readerPaperId]; st.translated = !st.translated;
-  document.getElementById('reader-translate').classList.toggle('active', st.translated);
-  renderReaderBody();
-  if(st.translated) toast('Traducido a '+profile.translationLanguage);
+  const st = ensureUserState(readerPaperId); st.showOriginal = !st.showOriginal;
+  document.getElementById('reader-translate').classList.toggle('active', st.showOriginal);
+  renderReaderBody(); saveLocalState();
+  toast(st.showOriginal ? 'Mostrando el texto original en inglés' : 'Traducido a '+profile.translationLanguage);
 });
-function downloadPaperPDF(id){
-  const p = papers.find(pp=>pp.id===id);
-  const st = userState[id];
-  const lang = st.translated ? 'en' : 'es';
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit:'pt', format:'a4' });
-  const marginX = 56;
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const maxW = pageW - marginX*2;
-  let y = 64;
-
-  function ensureSpace(lineHeight){
-    if(y + lineHeight > pageH - 56){ doc.addPage(); y = 64; }
-  }
-  function writeLines(text, size, opts){
-    opts = opts || {};
-    doc.setFont(opts.font || 'helvetica', opts.style || 'normal');
-    doc.setFontSize(size);
-    const lines = doc.splitTextToSize(text, maxW);
-    lines.forEach(line=>{
-      ensureSpace(size*1.4);
-      doc.text(line, marginX, y);
-      y += size*1.4;
-    });
-  }
-
-  writeLines(p.section.toUpperCase(), 9, { style:'bold' });
-  y += 4;
-  writeLines(p.title[lang], 18, { style:'bold' });
-  y += 2;
-  writeLines(p.authors, 11, { style:'italic' });
-  writeLines('DOI '+p.doi+'  ·  Citado '+p.citedBy+' veces', 9, { font:'courier' });
-  y += 6;
-  writeLines(p.keywords.join('  ·  '), 9, { style:'italic' });
-  y += 10;
-  writeLines('Abstract', 11, { style:'bold' });
-  writeLines(p.abstract[lang], 11);
-  y += 8;
-  p.content[lang].forEach(par=>{ writeLines(par, 11); y += 4; });
-
-  doc.save(p.title[lang].replace(/[^a-z0-9]+/gi,'-').slice(0,60) + '.pdf');
-}
 document.getElementById('reader-download').innerHTML = icon('download');
 document.getElementById('reader-download').addEventListener('click', ()=>{
-  const st = userState[readerPaperId]; st.downloaded = !st.downloaded;
-  document.getElementById('reader-download').classList.toggle('active', st.downloaded);
+  const p = papersIndex[readerPaperId];
+  if(!p) return;
+  const st = ensureUserState(readerPaperId); st.downloaded = !st.downloaded;
+  document.getElementById('reader-download').classList.toggle('active', st.downloaded); saveLocalState();
   if(st.downloaded){
-    downloadPaperPDF(readerPaperId);
-    toast('Descargando PDF…');
+    window.open(p.pdfUrl, '_blank', 'noopener');
+    toast('Abriendo el PDF original de arXiv…');
   } else {
-    toast('Ya no está disponible sin conexión');
+    toast('Quitado de guardados para después');
   }
 });
 document.getElementById('reader-style').innerHTML = icon('style');
@@ -1650,12 +1625,13 @@ if('serviceWorker' in navigator){
 const STATE_KEY = 'lab_state_v1';
 let lastSavedState = '';
 function snapshotState(){
-  const us = {};
+  const us = {}; const papersCache = {};
   Object.keys(userState).forEach(id=>{
     const u = userState[id];
-    us[id] = { folders:Array.from(u.folders), downloaded:u.downloaded, translated:u.translated, read:u.read };
+    us[id] = { folders:Array.from(u.folders), downloaded:u.downloaded, showOriginal:u.showOriginal, read:u.read };
+    if((u.folders.size>0 || u.downloaded) && papersIndex[id]) papersCache[id] = papersIndex[id];
   });
-  return JSON.stringify({ v:1, folders, userState:us,
+  return JSON.stringify({ v:2, folders, userState:us, papersCache,
     profile:{ interestAreas:profile.interestAreas, translationLanguage:profile.translationLanguage, appLanguage:profile.appLanguage, theme:profile.theme },
     readerStyle });
 }
@@ -1671,13 +1647,17 @@ function loadLocalState(){
   try{
     const d = JSON.parse(raw);
     if(Array.isArray(d.folders) && d.folders.every(f=>f && typeof f.id==='string' && typeof f.name==='string')) folders = d.folders;
+    if(d.papersCache && typeof d.papersCache==='object'){
+      Object.values(d.papersCache).forEach(p=>{ if(p && typeof p.id==='string') papersIndex[p.id] = p; });
+    }
     if(d.userState){
-      Object.keys(userState).forEach(id=>{
+      Object.keys(d.userState).forEach(id=>{
         const u = d.userState[id]; if(!u) return;
-        userState[id].folders = new Set(Array.isArray(u.folders) ? u.folders : []);
-        userState[id].downloaded = !!u.downloaded;
-        userState[id].translated = !!u.translated;
-        userState[id].read = !!u.read;
+        const st = ensureUserState(id);
+        st.folders = new Set(Array.isArray(u.folders) ? u.folders : []);
+        st.downloaded = !!u.downloaded;
+        st.showOriginal = !!u.showOriginal;
+        st.read = !!u.read;
       });
     }
     if(d.profile){
@@ -1695,7 +1675,7 @@ function loadLocalState(){
   document.documentElement.style.setProperty('--reader-font', readerStyle.fontSize+'px');
 }
 loadLocalState();
-setInterval(saveLocalState, 1500);
+setInterval(saveLocalState, 800);
 window.addEventListener('pagehide', saveLocalState);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) saveLocalState(); });
 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}

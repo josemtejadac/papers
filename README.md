@@ -22,3 +22,13 @@ Detalle en [SETUP-SOCIAL-DB.md](SETUP-SOCIAL-DB.md).
 - Chats directos privados, sala pública para todos y feed público (todo en D1, sin Supabase).
 - Tablas nuevas: pegar `migration-002.sql` en la Console de la base D1 (una sola vez).
 - Es una PWA: se puede instalar desde el navegador (`manifest.webmanifest` + `sw.js`).
+
+## Papers reales (arXiv)
+- Home busca directamente en la API pública de arXiv (`functions/api/papers.js` +
+  `functions/_lib/arxiv.js`). Funciona sin configuración extra.
+- Si se agrega un binding de **Workers AI** (`AI`), los papers se traducen al idioma elegido en
+  Perfil y se cachean en D1 (`paper_translations`, `migration-003.sql`). Sin ese binding, se ven
+  en inglés tal cual los entrega arXiv — el resto de la app sigue igual.
+- Detalle y costo en [SETUP-ARXIV-AI.md](SETUP-ARXIV-AI.md).
+- Requiere mostrar la atribución de arXiv (ya está en Perfil): "Gracias a arXiv por el uso de su
+  interoperabilidad de acceso abierto."
