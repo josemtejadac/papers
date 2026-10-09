@@ -76,7 +76,21 @@ export function parseArxivFeed(xml){
 // Nombres de idioma que espera el modelo de traducción de Workers AI (m2m100).
 const LANG_NAMES = { es:'spanish', en:'english', pt:'portuguese', fr:'french' };
 
-export async function translateEntries(env, entries, lang){
+// Separador poco común para pedir título+resumen en una sola llamada al modelo (la mitad de
+// llamadas que traducirlos por separado) y luego partir la respuesta por esa marca.
+const SPLIT_MARK = '\n===\n';
+// Si una traducción no responde dentro de este tiempo, se muestra el original en inglés para
+// esta visita (la traducción real sigue en segundo plano y queda cacheada para la próxima).
+const TRANSLATE_TIMEOUT_MS = 3500;
+
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ]);
+}
+
+export async function translateEntries(env, entries, lang, waitUntil){
   if (!lang || lang === 'en' || !entries.length) {
     return entries.map(e => ({ ...e, titleEn: e.title, abstractEn: e.abstract }));
   }
@@ -93,25 +107,35 @@ export async function translateEntries(env, entries, lang){
     results.forEach(r => cached.set(r.arxiv_id, r));
   }
 
+  async function translateOne(e){
+    const joined = e.title + SPLIT_MARK + e.abstract;
+    const res = await env.AI.run('@cf/meta/m2m100-1.2b', { text: joined, source_lang: 'english', target_lang: targetName });
+    const out = (res && res.translated_text) || '';
+    const parts = out.split(SPLIT_MARK);
+    const title = parts[0] ? parts[0].trim() : e.title;
+    const abstract = parts.length > 1 ? parts.slice(1).join(SPLIT_MARK).trim() : e.abstract;
+    if (hasDB) {
+      await env.DB.prepare(
+        `INSERT INTO paper_translations (arxiv_id, lang, title, abstract, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(arxiv_id, lang) DO UPDATE SET title = excluded.title, abstract = excluded.abstract`
+      ).bind(e.id, lang, title, abstract, new Date().toISOString()).run().catch(() => {});
+    }
+    return { title, abstract };
+  }
+
   return Promise.all(entries.map(async (e) => {
     const hit = cached.get(e.id);
     if (hit) return { ...e, title: hit.title, abstract: hit.abstract, titleEn: e.title, abstractEn: e.abstract };
     if (!hasAI) return { ...e, titleEn: e.title, abstractEn: e.abstract };
+    const job = translateOne(e).catch(() => null);
     try {
-      const [tTitle, tAbs] = await Promise.all([
-        env.AI.run('@cf/meta/m2m100-1.2b', { text: e.title, source_lang: 'english', target_lang: targetName }),
-        env.AI.run('@cf/meta/m2m100-1.2b', { text: e.abstract, source_lang: 'english', target_lang: targetName })
-      ]);
-      const title = (tTitle && tTitle.translated_text) || e.title;
-      const abstract = (tAbs && tAbs.translated_text) || e.abstract;
-      if (hasDB) {
-        env.DB.prepare(
-          `INSERT INTO paper_translations (arxiv_id, lang, title, abstract, created_at) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(arxiv_id, lang) DO UPDATE SET title = excluded.title, abstract = excluded.abstract`
-        ).bind(e.id, lang, title, abstract, new Date().toISOString()).run().catch(() => {});
-      }
-      return { ...e, title, abstract, titleEn: e.title, abstractEn: e.abstract };
+      const result = await withTimeout(job, TRANSLATE_TIMEOUT_MS);
+      if (!result) return { ...e, titleEn: e.title, abstractEn: e.abstract };
+      return { ...e, title: result.title, abstract: result.abstract, titleEn: e.title, abstractEn: e.abstract };
     } catch (err) {
+      // Se pasó el tiempo de espera: respondemos en inglés ahora, pero dejamos que la
+      // traducción termine en segundo plano (si el entorno lo permite) para la próxima vez.
+      if (waitUntil) waitUntil(job);
       return { ...e, titleEn: e.title, abstractEn: e.abstract };
     }
   }));

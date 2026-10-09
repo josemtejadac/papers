@@ -11,10 +11,10 @@ import { parseArxivFeed, translateEntries } from '../_lib/arxiv.js';
 
 const MAX_RESULTS = 15;
 
-export async function onRequestGet({ request, env }){
+export async function onRequestGet({ request, env, waitUntil }){
   const url = new URL(request.url);
   const lang = (clean(url.searchParams.get('lang'), 5) || 'es').toLowerCase();
-  const max = Math.min(Math.max(parseInt(url.searchParams.get('max') || '10', 10) || 10, 1), MAX_RESULTS);
+  const max = Math.min(Math.max(parseInt(url.searchParams.get('max') || '8', 10) || 8, 1), MAX_RESULTS);
   const start = Math.max(parseInt(url.searchParams.get('start') || '0', 10) || 0, 0);
 
   const idsParam = clean(url.searchParams.get('ids'), 300);
@@ -60,6 +60,6 @@ export async function onRequestGet({ request, env }){
     return json({ error: 'no se pudo leer la respuesta de arXiv' }, 502);
   }
 
-  const withLang = await translateEntries(env, entries, lang === 'en' ? 'en' : lang);
+  const withLang = await translateEntries(env, entries, lang === 'en' ? 'en' : lang, waitUntil);
   return json({ papers: withLang, count: withLang.length, lang });
 }
