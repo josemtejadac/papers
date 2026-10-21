@@ -78,7 +78,7 @@ const LANG_NAMES = { es:'spanish', en:'english', pt:'portuguese', fr:'french' };
 
 // Si una traducción no responde dentro de este tiempo, se muestra el original en inglés para
 // esta visita (la traducción real sigue en segundo plano y queda cacheada para la próxima).
-const TRANSLATE_TIMEOUT_MS = 4000;
+const TRANSLATE_TIMEOUT_MS = 9000;
 // Ni el modelo ni el "resumen" de arXiv tienen límite de largo estricto, pero mandarle un texto
 // demasiado largo al modelo de traducción es lo que más seguido causa una respuesta cortada o
 // vacía ("errores de traducción"). Se recorta a un tamaño que el modelo traduce de forma confiable.
