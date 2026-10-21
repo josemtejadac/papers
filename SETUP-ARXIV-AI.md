@@ -36,12 +36,36 @@ CREATE TABLE IF NOT EXISTS paper_translations (
 
 (Está en `migration-003.sql` del repo, por si prefieres copiarlo de ahí.)
 
+## Resumen simple con IA (opcional, usa el mismo binding AI)
+
+Al abrir un paper, el lector pide además un resumen cortito en lenguaje simple (aparte del
+resumen oficial). Usa el mismo binding `AI` de arriba — si no está configurado, esa parte
+simplemente no aparece, sin romper nada más. Necesita esta tabla extra (también en
+`migration-004.sql`):
+
+```sql
+CREATE TABLE IF NOT EXISTS paper_summaries (
+  arxiv_id TEXT NOT NULL,
+  lang TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (arxiv_id, lang)
+);
+```
+
+`migration-004.sql` también agrega dos columnas a `posts` (`author_public_id`, `edited_at`) que
+hacen falta para poder editar y eliminar tus propias publicaciones del feed. Ejecútalo completo
+en la Console de `lab-papers-db`.
+
 ## Costo
 
 - **arXiv**: gratis, sin límite relevante para este uso.
-- **Workers AI**: tiene una cuota gratis diaria en Cloudflare. Si se agota, las traducciones
-  fallan silenciosamente y la app muestra el texto en inglés hasta el día siguiente — no se cae
-  nada ni se cobra nada automáticamente, salvo que actives el plan pago.
+- **Workers AI**: tiene una cuota gratis diaria en Cloudflare, compartida entre la traducción y el
+  resumen simple. Si se agota, esas dos cosas fallan silenciosamente (texto en inglés sin resumen
+  simple) hasta el día siguiente — no se cae nada ni se cobra nada automáticamente, salvo que
+  actives el plan pago.
+- **PDF sin conexión**: el proxy `/api/pdf` cuenta como una petición normal de Pages Functions,
+  dentro del mismo límite gratis que ya usan el resto de las funciones (100.000/día).
 
 ## Atribución requerida por arXiv
 

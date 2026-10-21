@@ -5,7 +5,7 @@
 
 import { json, cleanText, getUser, handleOf } from '../../_lib/util.js';
 
-function mapRow(row, likedIds){
+function mapRow(row, likedIds, mePublicId){
   return {
     id: row.id,
     authorName: row.author_name,
@@ -17,12 +17,15 @@ function mapRow(row, likedIds){
     replies: row.replies,
     quotes: row.quotes,
     likedByMe: likedIds.has(row.id),
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    editedAt: row.edited_at || null,
+    mine: !!(mePublicId && row.author_public_id === mePublicId)
   };
 }
 
 export async function onRequestGet({ request, env }){
   const device = new URL(request.url).searchParams.get('device') || '';
+  const me = device ? await getUser(env, device) : null;
 
   const { results } = await env.DB.prepare(
     'SELECT * FROM posts ORDER BY created_at DESC, rowid DESC LIMIT 100'
@@ -36,7 +39,7 @@ export async function onRequestGet({ request, env }){
     ).bind(device, ...ids).all();
     likedIds = new Set(likedRes.results.map(r => r.post_id));
   }
-  return json({ posts: results.map(r => mapRow(r, likedIds)) });
+  return json({ posts: results.map(r => mapRow(r, likedIds, me && me.public_id)) });
 }
 
 export async function onRequestPost({ request, env }){
@@ -53,13 +56,13 @@ export async function onRequestPost({ request, env }){
   const id = 's' + crypto.randomUUID().replace(/-/g, '').slice(0, 14);
   const createdAt = new Date().toISOString();
   await env.DB.prepare(
-    `INSERT INTO posts (id, author_name, author_sub, text, paper_id, quoted_post_id, likes, replies, quotes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?)`
-  ).bind(id, handleOf(me), me.affiliation || '', text, paperId, quotedPostId, createdAt).run();
+    `INSERT INTO posts (id, author_name, author_sub, author_public_id, text, paper_id, quoted_post_id, likes, replies, quotes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)`
+  ).bind(id, handleOf(me), me.affiliation || '', me.public_id, text, paperId, quotedPostId, createdAt).run();
 
   if(quotedPostId){
     await env.DB.prepare('UPDATE posts SET quotes = quotes + 1 WHERE id = ?').bind(quotedPostId).run();
   }
   const row = await env.DB.prepare('SELECT * FROM posts WHERE id = ?').bind(id).first();
-  return json({ post: mapRow(row, new Set()) }, 201);
+  return json({ post: mapRow(row, new Set(), me.public_id) }, 201);
 }

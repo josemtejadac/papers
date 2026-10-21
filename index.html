@@ -151,8 +151,11 @@ svg.icon{ display:block; }
 .dm-badge.show{ display:flex; }
 .post-card{ padding:16px 20px; border-bottom:var(--border-w) solid var(--line); }
 .post-head{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.post-author{ flex:1; min-width:0; }
 .post-author .n{ font-size:14px; font-weight:600; }
 .post-author .s{ font-size:12px; color:var(--muted); }
+.post-own-menu{ border:none; background:none; color:var(--muted); padding:4px; flex:0 0 auto; }
+.post-edited{ font-size:11px; color:var(--muted); margin:-4px 0 6px; font-style:italic; }
 .post-text{ font-size:14.5px; line-height:1.5; margin-bottom:10px; }
 .post-quoted{ font-size:13px; color:var(--ink-soft); background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:9px; padding:9px 12px; margin-bottom:10px;}
 .post-paper{ background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:9px; padding:11px 13px; margin-bottom:10px; cursor:pointer;}
@@ -277,8 +280,16 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 .home-search button{ border:var(--border-w) solid var(--line); background:var(--paper); color:var(--ink-soft); border-radius:100px; padding:0 16px; font-size:13px; white-space:nowrap; }
 .home-query-tag{ padding:0 20px 10px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; flex:0 0 auto; }
 .home-query-tag button{ border:none; background:none; color:var(--accent); font-size:12px; text-decoration:underline; padding:0; }
+#home-filters-btn{ font-size:12px; padding:0 10px; }
+.home-filters{ display:flex; flex-direction:column; gap:8px; padding:0 20px 12px; flex:0 0 auto; }
+.home-filters input{ border:var(--border-w) solid var(--line); border-radius:8px; padding:7px 10px; font-size:14px; background:var(--paper-2); color:var(--ink); }
+.home-filters-dates{ display:flex; gap:10px; }
+.home-filters-dates label{ flex:1; font-size:11px; color:var(--muted); display:flex; flex-direction:column; gap:3px; }
+.home-filters-dates input{ width:100%; }
 .deck-state{ margin:auto; text-align:center; padding:40px 30px; color:var(--muted); font-size:14px; line-height:1.6; }
 .pdf-cta{ display:block; text-align:center; text-decoration:none; margin-top:18px; }
+.quick-summary{ font-size:13px; color:var(--ink-soft); background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:9px; padding:10px 12px; margin:10px 0; line-height:1.5; }
+.quick-summary:empty{ display:none; }
 .reader-ext-link{ display:block; text-align:center; margin-top:8px; font-size:12.5px; color:var(--muted); }
 .arxiv-credit{ font-size:11px; color:var(--muted); text-align:center; padding:18px 24px 6px; line-height:1.5; }
 .compose-bar{ display:block; flex:0 0 auto; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 14px; text-align:left; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; color:var(--muted); font:inherit; font-size:14px; cursor:pointer; }
@@ -315,7 +326,15 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
     </div>
     <div class="home-search">
       <input id="home-search" type="search" placeholder="Buscar en arXiv (ej. transformers, q-bio.NC)…" autocomplete="off">
+      <button id="home-filters-btn" aria-label="Filtros">Filtros</button>
       <button id="home-search-btn">Buscar</button>
+    </div>
+    <div class="home-filters" id="home-filters" style="display:none;">
+      <input id="home-filter-category" type="text" placeholder="Categoría exacta (ej. cs.LG)" autocomplete="off">
+      <div class="home-filters-dates">
+        <label>Desde <input id="home-filter-from" type="date"></label>
+        <label>Hasta <input id="home-filter-to" type="date"></label>
+      </div>
     </div>
     <div class="home-query-tag" id="home-query-tag" style="display:none;"></div>
     <div id="deck-wrap">
@@ -356,6 +375,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="screen-title">Biblioteca</div>
     </div>
     <div class="folder-tabs" id="folder-tabs"></div>
+    <div class="home-search" style="padding-top:0;"><input id="library-search" type="search" placeholder="Buscar en tu biblioteca…" autocomplete="off"></div>
     <div id="library-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column;"></div>
   </section>
 
@@ -376,7 +396,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="setting-row" id="row-install"><div class="label">Instalar app</div><div class="value">Añadir a inicio</div></div>
       <div class="setting-row danger" id="row-logout"><div class="label">Cierre de sesión</div></div>
     </div>
-    <div class="arxiv-credit">Gracias a arXiv por el uso de su interoperabilidad de acceso abierto.</div>
+    <div class="arxiv-credit">Gracias a arXiv por el uso de su interoperabilidad de acceso abierto.<br>Cada paper conserva la licencia que su autor eligió en arXiv (muchos son CC BY 4.0 International); revísala en la página del paper antes de redistribuirlo.</div>
   </section>
 
   <div id="reader">
@@ -436,17 +456,22 @@ const ICONS = {
   gmail:'<rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M4.5 7 12 13l7.5-6"/>',
   feed:'<line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="17" x2="12" y2="17"/>',
   reply:'<path d="M9 9.5 4 14l5 4.5"/><path d="M4 14h9.5a6.5 6.5 0 0 0 6.5-6.5V6"/>',
-  quote:'<path d="M7 6.5c-2.2 0-3.5 1.7-3.5 3.8S5 14 7 14c.5 0 1-.1 1.3-.4-.2 1.8-1.5 3.2-3.3 3.6" fill="none"/><path d="M15.5 6.5c-2.2 0-3.5 1.7-3.5 3.8s1.5 3.7 3.5 3.7c.5 0 1-.1 1.3-.4-.2 1.8-1.5 3.2-3.3 3.6" fill="none"/>'
+  quote:'<path d="M7 6.5c-2.2 0-3.5 1.7-3.5 3.8S5 14 7 14c.5 0 1-.1 1.3-.4-.2 1.8-1.5 3.2-3.3 3.6" fill="none"/><path d="M15.5 6.5c-2.2 0-3.5 1.7-3.5 3.8s1.5 3.7 3.5 3.7c.5 0 1-.1 1.3-.4-.2 1.8-1.5 3.2-3.3 3.6" fill="none"/>',
+  more:'<circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/>'
 };
 function icon(name, extraClass){ return '<svg class="icon icon-outline '+(extraClass||'')+'" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">'+ICONS[name]+'</svg>'; }
 
 /* ================= DATA ================= */
 const ME = 'me';
 let papers = [];           // deck actual (resultados de la búsqueda vigente)
-let papersIndex = {};      // id -> paper, todo lo que la app ha visto (persistido en lo que se guarda)
+let papersIndex = {};      // id -> paper, todo lo que la app ha visto (se cachea para usarlo sin conexión)
+let papersSeenOrder = [];  // ids en el orden en que se vieron por primera vez (para limitar el caché)
+const MAX_CACHED_PAPERS = 300; // tope del caché local; los papers guardados en una carpeta no se borran
 let homeLoading = false;
 let homeFailed = false;
 let homeQuery = '';        // texto escrito por la persona; vacío = recomendado según sus intereses
+let lastHomeIds = [];      // último deck de Home que cargó bien, para mostrarlo si falla la conexión
+let lastHomeWasSearch = false;
 
 // Interés elegido en la encuesta -> categorías de arXiv para la búsqueda por defecto de Home.
 // arXiv no tiene una categoría propia para algunos temas (p. ej. Inmunología); se usa la más cercana.
@@ -467,7 +492,26 @@ function ensureUserState(id){
   return userState[id];
 }
 function mergePapers(list){
-  (list || []).forEach(p=>{ papersIndex[p.id] = p; ensureUserState(p.id); });
+  (list || []).forEach(p=>{
+    if(!papersIndex[p.id]) papersSeenOrder.push(p.id);
+    papersIndex[p.id] = p;
+    ensureUserState(p.id);
+  });
+  pruneOldCachedPapers();
+}
+function pruneOldCachedPapers(){
+  if(papersSeenOrder.length <= MAX_CACHED_PAPERS) return;
+  const isProtected = id=>{
+    const st = userState[id];
+    return (st && (st.folders.size>0 || st.downloaded)) || papers.some(p=>p.id===id) || lastHomeIds.includes(id);
+  };
+  let overBy = papersSeenOrder.length - MAX_CACHED_PAPERS;
+  const kept = [];
+  for(const id of papersSeenOrder){
+    if(overBy>0 && !isProtected(id)){ delete papersIndex[id]; overBy--; }
+    else kept.push(id);
+  }
+  papersSeenOrder = kept;
 }
 async function ensurePapersLoaded(ids){
   const missing = Array.from(new Set((ids||[]).filter(Boolean))).filter(id=>!papersIndex[id]);
@@ -484,30 +528,61 @@ function defaultArxivCategories(){
   if(set.size===0) set.add('cs.AI');
   return Array.from(set);
 }
+function offlineFallbackDeck(){
+  // Sin red: si ya habíamos cargado un deck antes en este navegador, lo mostramos desde el
+  // caché local en vez de un error — "la app funciona sin conexión sobre los papers que ya estaban".
+  const cached = lastHomeIds.map(id=>papersIndex[id]).filter(Boolean);
+  return cached.length ? cached : null;
+}
 async function loadHomeDeck(query){
   homeQuery = (query || '').trim();
   homeLoading = true; homeFailed = false; deckIndex = 0;
   renderDeck();
+  const offline = typeof navigator!=='undefined' && navigator.onLine===false;
+  const filterCategory = document.getElementById('home-filter-category').value.trim();
+  const filterFrom = document.getElementById('home-filter-from').value;
+  const filterTo = document.getElementById('home-filter-to').value;
   try{
+    if(offline) throw new Error('offline');
     const params = new URLSearchParams();
     if(homeQuery) params.set('q', homeQuery);
-    else params.set('category', defaultArxivCategories().join(','));
+    if(filterCategory) params.set('category', filterCategory);
+    else if(!homeQuery) params.set('category', defaultArxivCategories().join(','));
+    if(filterFrom) params.set('from', filterFrom);
+    if(filterTo) params.set('to', filterTo);
     params.set('lang', langCodeFor(profile.translationLanguage));
     params.set('max', '8');
     const data = await api('/api/papers?'+params.toString());
     mergePapers(data.papers);
     papers = data.papers.map(p=>papersIndex[p.id]);
+    lastHomeIds = papers.map(p=>p.id);
+    lastHomeWasSearch = !!homeQuery;
+    saveLocalState();
     homeLoading = false;
     if(!papers.length) homeFailed = 'empty';
   } catch(e){
-    homeLoading = false; homeFailed = true; papers = [];
+    const fallback = (!homeQuery || homeQuery===(lastHomeWasSearch?homeQuery:'')) ? offlineFallbackDeck() : null;
+    if(fallback){
+      papers = fallback;
+      homeLoading = false; homeFailed = 'offline-cached';
+    } else {
+      homeLoading = false; homeFailed = true; papers = [];
+    }
   }
   renderDeck();
   const tag = document.getElementById('home-query-tag');
-  if(homeQuery){ tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
+  if(homeFailed === 'offline-cached'){
+    tag.style.display='flex'; tag.innerHTML = 'Sin conexión · mostrando lo último que se cargó';
+  } else if(homeQuery){
+    tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
     const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
   } else { tag.style.display='none'; tag.innerHTML=''; }
 }
+document.getElementById('library-search').addEventListener('input', e=>{ libraryQuery = e.target.value; renderLibrary(); });
+document.getElementById('home-filters-btn').addEventListener('click', ()=>{
+  const el = document.getElementById('home-filters');
+  el.style.display = el.style.display==='none' ? 'flex' : 'none';
+});
 document.getElementById('home-search-btn').addEventListener('click', ()=> loadHomeDeck(document.getElementById('home-search').value));
 document.getElementById('home-search').addEventListener('keydown', e=>{ if(e.key==='Enter') loadHomeDeck(e.target.value); });
 
@@ -568,6 +643,18 @@ function apiPost(path, body){
   return api(path, {
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify(Object.assign({ deviceId:getDeviceId() }, body))
+  });
+}
+function apiPatch(path, body){
+  return api(path, {
+    method:'PATCH', headers:{'content-type':'application/json'},
+    body: JSON.stringify(Object.assign({ deviceId:getDeviceId() }, body))
+  });
+}
+function apiDelete(path, body){
+  return api(path, {
+    method:'DELETE', headers:{'content-type':'application/json'},
+    body: JSON.stringify(Object.assign({ deviceId:getDeviceId() }, body||{}))
   });
 }
 function hasIdentity(){ return !!(session.name && session.publicId && session.handle); }
@@ -744,7 +831,7 @@ function renderDeck(){
     nav.style.display = 'none';
     return;
   }
-  if(homeFailed){
+  if(homeFailed && homeFailed!=='offline-cached'){
     deck.innerHTML = homeFailed==='empty'
       ? '<div class="deck-state">No encontramos papers para esa búsqueda. Prueba con otros términos.</div>'
       : '<div class="deck-state">No se pudo cargar arXiv. Revisa tu conexión e inténtalo de nuevo.</div>';
@@ -1007,10 +1094,11 @@ function openShareContactsSheet(paperId){
 let socialPosts = [];
 let socialLoadFailed = false;
 let socialLoading = false;
+let socialRefreshPending = false; // alguien pidió un refresco mientras ya había uno en curso
 let socialSig = '';
 
 async function loadAndRenderSocialFeed(silent){
-  if(socialLoading) return;
+  if(socialLoading){ if(!silent) socialRefreshPending = true; return; }
   socialLoading = true;
   const wrap = document.getElementById('social-feed');
   if(!silent && socialPosts.length===0) wrap.innerHTML = '<div class="empty-state">Cargando publicaciones…</div>';
@@ -1018,16 +1106,19 @@ async function loadAndRenderSocialFeed(silent){
     const data = await api('/api/social/posts?device=' + encodeURIComponent(getDeviceId()));
     const sig = JSON.stringify(data.posts);
     socialLoadFailed = false;
-    if(silent && sig === socialSig){ socialLoading = false; return; }
+    if(silent && sig === socialSig){ socialLoading = false; if(socialRefreshPending){ socialRefreshPending=false; loadAndRenderSocialFeed(); } return; }
     socialSig = sig;
     socialPosts = data.posts;
     await ensurePapersLoaded(socialPosts.map(p=>p.paperId));
   } catch(e){
     if(!silent || socialPosts.length===0) socialLoadFailed = true;
-    else { socialLoading = false; return; }
+    else { socialLoading = false; if(socialRefreshPending){ socialRefreshPending=false; loadAndRenderSocialFeed(); } return; }
   }
   socialLoading = false;
   renderSocialFeed();
+  // Alguien pidió un refresco "de verdad" (no silencioso) mientras este estaba en curso: se perdió
+  // la actualización de recién, así que se vuelve a pedir ahora que ya terminamos.
+  if(socialRefreshPending){ socialRefreshPending = false; loadAndRenderSocialFeed(); }
 }
 function postCardHtml(post){
   const paper = post.paperId ? papersIndex[post.paperId] : null;
@@ -1040,8 +1131,10 @@ function postCardHtml(post){
     <div class="post-head">
       <div class="avatar">${esc(initials(post.authorName)||'?')}</div>
       <div class="post-author"><div class="n">${esc(post.authorName)}</div><div class="s">${esc(post.authorSub||'')}</div></div>
+      ${post.mine? `<button class="post-own-menu" data-act="menu" aria-label="Opciones">${icon('more')}</button>` : ''}
     </div>
     ${post.text ? `<div class="post-text">${esc(post.text)}</div>` : ''}
+    ${post.editedAt ? `<div class="post-edited">editado</div>` : ''}
     ${quotedHtml}
     ${paper? `<div class="post-paper" data-pid="${paper.id}"><div class="pp-label">${esc(paper.section)}</div><h4>${esc(paper.title)}</h4><div class="pp-meta">${esc(paper.authors)}</div></div>` : ''}
     <div class="post-actions">
@@ -1070,7 +1163,44 @@ function renderSocialFeed(){
     card.querySelector('[data-act="like"]').addEventListener('click', ()=> toggleLikePost(id));
     card.querySelector('[data-act="reply"]').addEventListener('click', ()=> openReplySheet(id));
     card.querySelector('[data-act="quote"]').addEventListener('click', ()=> openQuoteSheet(id));
+    const menuBtn = card.querySelector('[data-act="menu"]');
+    if(menuBtn) menuBtn.addEventListener('click', ()=> openPostMenuSheet(id));
   });
+}
+function openPostMenuSheet(id){
+  const post = socialPosts.find(p=>p.id===id);
+  if(!post) return;
+  const body = `
+    <div class="pick-row" id="post-edit-row"><div class="info"><div class="n">Editar</div></div></div>
+    <div class="pick-row" id="post-delete-row"><div class="info"><div class="n" style="color:var(--wax);">Eliminar</div></div></div>`;
+  openSheet({ title:'Tu publicación', bodyHtml: body });
+  document.getElementById('post-edit-row').addEventListener('click', ()=>{ closeSheet(); openEditPostSheet(id); });
+  document.getElementById('post-delete-row').addEventListener('click', ()=>{
+    closeSheet();
+    openSheet({ title:'¿Eliminar esta publicación?', sub:'No se puede deshacer.', bodyHtml:'', footerText:'Eliminar',
+      onConfirm: async ()=>{
+        try{
+          await apiDelete('/api/social/posts/'+encodeURIComponent(id));
+          closeSheet(); toast('Publicación eliminada');
+          loadAndRenderSocialFeed();
+        } catch(e){ toast('No se pudo eliminar'); }
+      }});
+  });
+}
+function openEditPostSheet(id){
+  const post = socialPosts.find(p=>p.id===id);
+  if(!post) return;
+  const body = `<textarea class="share-comment" id="edit-post-text" rows="4" maxlength="2000" style="margin-top:0;">${esc(post.text||'')}</textarea>`;
+  openSheet({ title:'Editar publicación', bodyHtml: body, footerText:'Guardar',
+    onConfirm: async ()=>{
+      const val = document.getElementById('edit-post-text').value.trim();
+      if(!val){ toast('El texto no puede quedar vacío'); return; }
+      try{
+        await apiPatch('/api/social/posts/'+encodeURIComponent(id), { text: val });
+        closeSheet(); toast('Publicación actualizada');
+        loadAndRenderSocialFeed();
+      } catch(e){ toast('No se pudo editar'); }
+    }});
 }
 document.getElementById('compose-open').addEventListener('click', ()=> requireIdentity(()=> openComposeSheet()));
 function openComposeSheet(){
@@ -1369,6 +1499,7 @@ function renderFolderTabs(){
     });
   });
 }
+let libraryQuery = '';
 function renderLibrary(){
   renderFolderTabs();
   const list = document.getElementById('library-list');
@@ -1378,8 +1509,12 @@ function renderLibrary(){
     if(libFilter==='all') return st.folders.size>0;
     return st.folders.has(libFilter);
   });
+  const q = libraryQuery.trim().toLowerCase();
+  if(q) items = items.filter(p=> (p.title+' '+p.authors).toLowerCase().includes(q));
   if(items.length===0){
-    const msg = libFilter==='all'
+    const msg = q
+      ? 'Nada en tu biblioteca coincide con esa búsqueda.'
+      : libFilter==='all'
       ? 'Aún no tienes papers en tu biblioteca. Guarda uno desde el Home con el corazón para verlo aquí.'
       : 'Aún no guardaste papers en esta carpeta.';
     list.innerHTML = `<div class="empty-state">${msg}</div>`;
@@ -1530,10 +1665,11 @@ function renderReaderBody(){
     <div class="meta-line mono">${p.doi? 'DOI '+esc(p.doi) : 'arXiv:'+esc(p.id)}</div>
     <div class="kw-row">${(p.categoryLabels||[]).map(k=>`<span class="kw">${esc(k)}</span>`).join('')}</div>
     ${chip}
+    <div class="quick-summary" id="quick-summary-box"></div>
     <div class="abstract-label">Resumen</div>
     <p>${esc(abstract)}</p>
-    <a class="btn-primary pdf-cta" href="${p.pdfUrl}" target="_blank" rel="noopener">Abrir el PDF completo en arXiv</a>
-    <a class="reader-ext-link" href="${p.absUrl}" target="_blank" rel="noopener">Ver la página del paper en arxiv.org</a>
+    <a class="btn-primary pdf-cta" href="/api/pdf?id=${encodeURIComponent(p.id)}" target="_blank" rel="noopener">Abrir el PDF completo${st.downloaded?' (guardado sin conexión)':''}</a>
+    <a class="reader-ext-link" href="${p.absUrl}" target="_blank" rel="noopener">Ver la página original en arxiv.org</a>
   `;
   if(st.showOriginal){
     document.getElementById('chip-toggle').addEventListener('click', ()=>{
@@ -1542,6 +1678,28 @@ function renderReaderBody(){
       renderReaderBody();
     });
   }
+  loadQuickSummary(p);
+}
+const quickSummaryCache = {};
+async function loadQuickSummary(p){
+  const lang = langCodeFor(profile.translationLanguage);
+  const key = p.id+'|'+lang;
+  const box = document.getElementById('quick-summary-box');
+  if(quickSummaryCache[key] !== undefined){
+    if(box && readerPaperId===p.id) box.innerHTML = quickSummaryCache[key] ? `<b>En simple:</b> ${esc(quickSummaryCache[key])}` : '';
+    return;
+  }
+  if(box && readerPaperId===p.id) box.textContent = 'Generando un resumen simple…';
+  try{
+    const data = await api('/api/papers/summary', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ id:p.id, lang, abstract: p.abstractEn || p.abstract })
+    });
+    quickSummaryCache[key] = data.summary || null;
+  } catch(e){ quickSummaryCache[key] = null; }
+  if(readerPaperId!==p.id) return; // la persona ya cambió de paper
+  const nowBox = document.getElementById('quick-summary-box');
+  if(nowBox) nowBox.innerHTML = quickSummaryCache[key] ? `<b>En simple:</b> ${esc(quickSummaryCache[key])}` : '';
 }
 document.getElementById('reader-back').innerHTML = icon('back');
 document.getElementById('reader-back').addEventListener('click', ()=> backLayer('reader', closeReaderView));
@@ -1561,8 +1719,13 @@ document.getElementById('reader-download').addEventListener('click', ()=>{
   const st = ensureUserState(readerPaperId); st.downloaded = !st.downloaded;
   document.getElementById('reader-download').classList.toggle('active', st.downloaded); saveLocalState();
   if(st.downloaded){
-    window.open(p.pdfUrl, '_blank', 'noopener');
-    toast('Abriendo el PDF original de arXiv…');
+    const pdfProxyUrl = '/api/pdf?id='+encodeURIComponent(p.id);
+    if('caches' in window){
+      caches.open('lab-papers-pdfs-v1').then(c=>c.add(pdfProxyUrl)).catch(()=>{});
+    }
+    window.open(pdfProxyUrl, '_blank', 'noopener');
+    renderReaderBody();
+    toast('Guardando el PDF para leerlo sin conexión…');
   } else {
     toast('Quitado de guardados para después');
   }
@@ -1625,13 +1788,15 @@ if('serviceWorker' in navigator){
 const STATE_KEY = 'lab_state_v1';
 let lastSavedState = '';
 function snapshotState(){
-  const us = {}; const papersCache = {};
+  const us = {};
   Object.keys(userState).forEach(id=>{
     const u = userState[id];
     us[id] = { folders:Array.from(u.folders), downloaded:u.downloaded, showOriginal:u.showOriginal, read:u.read };
-    if((u.folders.size>0 || u.downloaded) && papersIndex[id]) papersCache[id] = papersIndex[id];
   });
-  return JSON.stringify({ v:2, folders, userState:us, papersCache,
+  // Se cachea todo lo que se ha visto (acotado por MAX_CACHED_PAPERS), no solo lo guardado:
+  // así Home, Biblioteca y lo que se abrió antes siguen funcionando sin conexión.
+  return JSON.stringify({ v:3, folders, userState:us, papersCache:papersIndex, papersSeenOrder,
+    lastHomeIds, lastHomeWasSearch,
     profile:{ interestAreas:profile.interestAreas, translationLanguage:profile.translationLanguage, appLanguage:profile.appLanguage, theme:profile.theme },
     readerStyle });
 }
@@ -1650,6 +1815,9 @@ function loadLocalState(){
     if(d.papersCache && typeof d.papersCache==='object'){
       Object.values(d.papersCache).forEach(p=>{ if(p && typeof p.id==='string') papersIndex[p.id] = p; });
     }
+    papersSeenOrder = Array.isArray(d.papersSeenOrder) ? d.papersSeenOrder.filter(id=>papersIndex[id]) : Object.keys(papersIndex);
+    if(Array.isArray(d.lastHomeIds)) lastHomeIds = d.lastHomeIds;
+    lastHomeWasSearch = !!d.lastHomeWasSearch;
     if(d.userState){
       Object.keys(d.userState).forEach(id=>{
         const u = d.userState[id]; if(!u) return;

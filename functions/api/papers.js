@@ -26,9 +26,16 @@ export async function onRequestGet({ request, env, waitUntil }){
     const q = clean(url.searchParams.get('q'), 200);
     const categories = clean(url.searchParams.get('category'), 200)
       .split(',').map(s => s.trim()).filter(Boolean);
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('from') || '') ? url.searchParams.get('from') : '';
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('to') || '') ? url.searchParams.get('to') : '';
     const parts = [];
     if (categories.length) parts.push('(' + categories.map(c => 'cat:' + c).join(' OR ') + ')');
     if (q) parts.push('all:' + q.replace(/[()]/g, ' '));
+    if (from || to) {
+      const d0 = (from || '1991-01-01').replace(/-/g, '') + '0000';
+      const d1 = (to || '2100-01-01').replace(/-/g, '') + '2359';
+      parts.push(`submittedDate:[${d0} TO ${d1}]`);
+    }
     if (!parts.length) parts.push('cat:cs.AI');
     searchQuery = parts.join(' AND ');
   }
