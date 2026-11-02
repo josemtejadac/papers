@@ -94,15 +94,68 @@ function withTimeout(promise, ms){
 // Traduce un solo texto. Antes se pedían título+resumen juntos en una llamada, separados por una
 // marca de texto — pero el modelo no siempre respeta esa marca al traducir, y eso mezclaba o
 // perdía el resumen. Separado en una llamada por campo es más lento pero mucho más confiable.
-async function translateText(env, text, targetName){
+async function translateText(env, text, targetName, sourceName){
   if(!text) return '';
   const input = text.length > MAX_TRANSLATE_CHARS ? text.slice(0, MAX_TRANSLATE_CHARS) : text;
-  const res = await env.AI.run('@cf/meta/m2m100-1.2b', { text: input, source_lang: 'english', target_lang: targetName });
+  const res = await env.AI.run('@cf/meta/m2m100-1.2b', { text: input, source_lang: sourceName || 'english', target_lang: targetName });
   const out = res && typeof res.translated_text === 'string' ? res.translated_text.trim() : '';
   // Respuesta vacía o claramente rota (mucho más corta que el original) = se trata como error,
   // para no mostrar un resumen cortado a la mitad como si fuera la traducción completa.
   if(!out || out.length < input.length * 0.25) throw new Error('translation looked broken');
   return out;
+}
+
+// Traduce un paper, campo por campo, reusando lo que ya esté en caché (cachedRow) y sin repetir
+// una llamada a la IA por un campo que ya se tradujo antes. Si un campo se pasa del tiempo de
+// espera, la llamada real sigue corriendo "de fondo": cuando termine (bien o mal), se guarda en
+// D1 para la próxima persona, sin hacer esperar a quien hizo esta visita.
+async function translateOne(env, e, cachedRow, targetName, lang, hasDB, waitUntil){
+  const titleJob = (cachedRow && cachedRow.title) ? null : translateText(env, e.title, targetName).catch(() => null);
+  const abstractJob = (cachedRow && cachedRow.abstract) ? null : translateText(env, e.abstract, targetName).catch(() => null);
+
+  const [titleSettled, abstractSettled] = await Promise.allSettled([
+    titleJob ? withTimeout(titleJob, TRANSLATE_TIMEOUT_MS) : Promise.resolve(cachedRow.title),
+    abstractJob ? withTimeout(abstractJob, TRANSLATE_TIMEOUT_MS) : Promise.resolve(cachedRow.abstract)
+  ]);
+  const title = (titleSettled.status === 'fulfilled' && titleSettled.value) ? titleSettled.value : e.title;
+  const abstract = (abstractSettled.status === 'fulfilled' && abstractSettled.value) ? abstractSettled.value : e.abstract;
+
+  if (hasDB && (titleJob || abstractJob)) {
+    const save = Promise.all([
+      titleJob ? titleJob : Promise.resolve(null),
+      abstractJob ? abstractJob : Promise.resolve(null)
+    ]).then(([t, a]) => {
+      if (!t && !a) return;
+      return env.DB.prepare(
+        `INSERT INTO paper_translations (arxiv_id, lang, title, abstract, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(arxiv_id, lang) DO UPDATE SET
+           title = CASE WHEN excluded.title != '' THEN excluded.title ELSE title END,
+           abstract = CASE WHEN excluded.abstract != '' THEN excluded.abstract ELSE abstract END,
+           created_at = excluded.created_at`
+      ).bind(e.id, lang, t || '', a || '', new Date().toISOString()).run();
+    }).catch(() => {});
+    if (waitUntil) waitUntil(save); else await save;
+  }
+  return { title, abstract };
+}
+
+// Traduce el texto de búsqueda al inglés antes de mandarlo a arXiv: su buscador es casi todo en
+// inglés, así que buscar "familia" no encuentra nada aunque sí existan papers sobre el tema (ahí
+// dice "family"). Si no hay IA disponible o la traducción falla/se demora, se busca tal cual.
+const QUERY_TRANSLATE_TIMEOUT_MS = 4000;
+export async function translateQueryToEnglish(env, text, lang){
+  const q = (text || '').trim();
+  if (!q || !lang || lang === 'en') return q;
+  const hasAI = !!(env.AI && typeof env.AI.run === 'function');
+  if (!hasAI) return q;
+  const sourceName = LANG_NAMES[lang] || LANG_NAMES.es;
+  try {
+    const translated = await withTimeout(translateText(env, q, 'english', sourceName), QUERY_TRANSLATE_TIMEOUT_MS);
+    // (sourceName indica de qué idioma viene la búsqueda; 'english' es a qué idioma se traduce)
+    return translated || q;
+  } catch (e) {
+    return q;
+  }
 }
 
 export async function translateEntries(env, entries, lang, waitUntil){
@@ -122,35 +175,13 @@ export async function translateEntries(env, entries, lang, waitUntil){
     results.forEach(r => cached.set(r.arxiv_id, r));
   }
 
-  async function translateOne(e){
-    // Título y resumen se traducen por separado y de forma independiente: si uno falla o se
-    // pasa del tiempo, igual se entrega el otro traducido en vez de perder los dos.
-    const [titleR, abstractR] = await Promise.allSettled([
-      withTimeout(translateText(env, e.title, targetName), TRANSLATE_TIMEOUT_MS),
-      withTimeout(translateText(env, e.abstract, targetName), TRANSLATE_TIMEOUT_MS)
-    ]);
-    const title = titleR.status === 'fulfilled' ? titleR.value : e.title;
-    const abstract = abstractR.status === 'fulfilled' ? abstractR.value : e.abstract;
-    const fullyTranslated = titleR.status === 'fulfilled' && abstractR.status === 'fulfilled';
-    if (hasDB && fullyTranslated) {
-      await env.DB.prepare(
-        `INSERT INTO paper_translations (arxiv_id, lang, title, abstract, created_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(arxiv_id, lang) DO UPDATE SET title = excluded.title, abstract = excluded.abstract`
-      ).bind(e.id, lang, title, abstract, new Date().toISOString()).run().catch(() => {});
-    }
-    return { title, abstract, fullyTranslated };
-  }
-
   return Promise.all(entries.map(async (e) => {
     const hit = cached.get(e.id);
-    if (hit) return { ...e, title: hit.title, abstract: hit.abstract, titleEn: e.title, abstractEn: e.abstract };
-    if (!hasAI) return { ...e, titleEn: e.title, abstractEn: e.abstract };
-    try {
-      const result = await translateOne(e);
-      return { ...e, title: result.title, abstract: result.abstract, titleEn: e.title, abstractEn: e.abstract };
-    } catch (err) {
-      // No debería pasar (translateOne no tira errores propios), pero por si acaso: inglés y listo.
-      return { ...e, titleEn: e.title, abstractEn: e.abstract };
+    if (!hasAI) {
+      // Sin IA en este request, pero igual se sirve lo que ya hubiera quedado cacheado antes.
+      return { ...e, title: (hit && hit.title) || e.title, abstract: (hit && hit.abstract) || e.abstract, titleEn: e.title, abstractEn: e.abstract };
     }
+    const result = await translateOne(env, e, hit, targetName, lang, hasDB, waitUntil);
+    return { ...e, title: result.title, abstract: result.abstract, titleEn: e.title, abstractEn: e.abstract };
   }));
 }

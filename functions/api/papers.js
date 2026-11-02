@@ -7,7 +7,7 @@
 // Requerido por los términos de uso de la API de arXiv: https://info.arxiv.org/help/api/tou.html
 
 import { json, clean } from '../_lib/util.js';
-import { parseArxivFeed, translateEntries } from '../_lib/arxiv.js';
+import { parseArxivFeed, translateEntries, translateQueryToEnglish } from '../_lib/arxiv.js';
 
 const MAX_RESULTS = 15;
 
@@ -23,7 +23,10 @@ export async function onRequestGet({ request, env, waitUntil }){
     idList = idsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, MAX_RESULTS);
     if (!idList.length) return json({ papers: [] });
   } else {
-    const q = clean(url.searchParams.get('q'), 200);
+    const qRaw = clean(url.searchParams.get('q'), 200);
+    // arXiv es casi todo en inglés: una búsqueda en español no encuentra nada aunque el tema sí
+    // esté cubierto. Se traduce el término al inglés antes de mandarlo (si hay IA disponible).
+    const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : qRaw;
     const categories = clean(url.searchParams.get('category'), 200)
       .split(',').map(s => s.trim()).filter(Boolean);
     const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('from') || '') ? url.searchParams.get('from') : '';
