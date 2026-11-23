@@ -13,7 +13,7 @@ import { json, clean, safe } from '../_lib/util.js';
 import { parseArxivFeed, translateEntries, translateQueryToEnglish } from '../_lib/arxiv.js';
 import {
   fetchArxivXml, getCachedPapers, saveCachedPapers, getCachedQuery, saveCachedQuery,
-  lookupPapers, isFresh, QUERY_FRESH_MS
+  lookupPapers, isFresh, QUERY_FRESH_MS, searchCachedPapers
 } from '../_lib/arxivFetch.js';
 import * as smart from '../_lib/smartSearch.js';
 const { interpretQuery, buildSmartQuery, rerankByMeaning, CANDIDATES } = smart;
@@ -57,6 +57,7 @@ async function handleGet({ request, env, waitUntil }){
     }
 
     if (!entries) {
+      let interp = null;
       try {
         const dateClause = (from || to)
           ? `submittedDate:[${(from || '1991-01-01').replace(/-/g, '')}0000 TO ${(to || '2100-01-01').replace(/-/g, '')}2359]`
@@ -73,7 +74,7 @@ async function handleGet({ request, env, waitUntil }){
 
         // Búsqueda que entiende el sentido (ver _lib/smartSearch.js). Si la IA no está o falla,
         // interp es null y se usa la búsqueda simple de abajo.
-        const interp = (qRaw && start === 0) ? await interpretQuery(env, qRaw, lang) : null;
+        interp = (qRaw && start === 0) ? await interpretQuery(env, qRaw, lang) : null;
         searchMode = interp ? 'smart' : (qRaw ? 'simple: ' + (smart.lastInterpretIssue || 'skipped') : 'recent');
         if (interp) {
           let candidates = await fetchList(buildSmartQuery(interp, categories, dateClause), 'relevance', CANDIDATES);
@@ -85,6 +86,9 @@ async function handleGet({ request, env, waitUntil }){
             candidates = candidates.concat(more.filter(e => !seen.has(e.id)));
           }
           entries = (await rerankByMeaning(env, candidates, interp.meaning)).slice(0, max);
+          // Se guardan todos los candidatos (no solo los mostrados): así hay más papers disponibles
+          // para buscar en lo guardado si arXiv deja de responder.
+          saveCachedPapers(env, candidates, waitUntil);
         } else {
           // arXiv es casi todo en inglés: se traduce el término al inglés antes de mandarlo (si hay IA).
           const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : '';
@@ -109,7 +113,16 @@ async function handleGet({ request, env, waitUntil }){
           const fromCache = cachedQuery.ids.map(id => known.get(id)).filter(Boolean);
           if (fromCache.length) { entries = fromCache; stale = true; }
         }
-        if (!entries) return json({ error: 'arXiv no está respondiendo en este momento. Intenta de nuevo en un rato.' }, 502);
+        // Búsqueda nueva y arXiv caído: se busca entre todos los papers que Abstracta ya guardó.
+        if (!entries) {
+          const terms = interp ? interp.keywords.concat(interp.english.split(' '))
+            : qRaw ? qRaw.split(/\s+/)
+            : categories.length ? categories : [];
+          let local = await searchCachedPapers(env, terms, 60);
+          if (local.length && interp) local = await rerankByMeaning(env, local, interp.meaning);
+          if (local.length) { entries = local.slice(0, max); stale = true; searchMode += ' | local'; }
+        }
+        if (!entries) return json({ error: 'arXiv está saturado en este momento y todavía no hay papers guardados sobre este tema. Intenta de nuevo en un rato.' }, 502);
       }
     }
   }

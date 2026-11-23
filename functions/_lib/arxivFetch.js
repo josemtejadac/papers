@@ -16,6 +16,7 @@ const USER_AGENT = 'Abstracta/1.0 (papers app; Cloudflare Pages)';
 // arXiv publica papers nuevos una vez al día: una búsqueda guardada sirve por varias horas.
 export const QUERY_FRESH_MS = 3 * 60 * 60 * 1000;
 const RETRY_DELAY_MS = 1500;
+const FETCH_TIMEOUT_MS = 8000;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -23,9 +24,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function fetchArxivXml(url){
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt++) {
+    // Tope de tiempo por intento: si arXiv se cuelga, la persona no espera casi un minuto.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
       const res = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT },
+        signal: ctrl.signal,
         // Caché del propio borde de Cloudflare para respuestas buenas (nunca para errores).
         cf: { cacheTtlByStatus: { '200-299': 3600, '300-599': 0 } }
       });
@@ -34,6 +39,8 @@ export async function fetchArxivXml(url){
       if (res.status !== 429 && res.status < 500) break; // error "real" del pedido: no sirve reintentar
     } catch (e) {
       lastError = e;
+    } finally {
+      clearTimeout(timer);
     }
     if (attempt === 0) await sleep(RETRY_DELAY_MS);
   }
@@ -78,6 +85,21 @@ export function saveCachedQuery(env, key, ids, waitUntil){
      ON CONFLICT(query_key) DO UPDATE SET ids = excluded.ids, fetched_at = excluded.fetched_at`
   ).bind(key, JSON.stringify(ids), new Date().toISOString()).run().catch(() => {});
   if (waitUntil) waitUntil(job);
+}
+
+// Respaldo cuando arXiv no responde y la búsqueda nunca se había hecho: busca entre los papers
+// que Abstracta ya guardó en D1 (todo lo que alguien vio alguna vez) los que contienen los términos.
+export async function searchCachedPapers(env, terms, limit){
+  const words = Array.from(new Set((terms || []).map(t => String(t || '').toLowerCase().trim()).filter(t => t.length >= 3))).slice(0, 6);
+  if (!env.DB || !words.length) return [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT data FROM arxiv_papers WHERE ${words.map(() => 'data LIKE ?').join(' OR ')} ORDER BY fetched_at DESC LIMIT ?`
+    ).bind(...words.map(w => '%' + w.replace(/[%_]/g, '') + '%'), limit).all();
+    const out = [];
+    results.forEach(r => { try { out.push(JSON.parse(r.data)); } catch (e) {} });
+    return out;
+  } catch (e) { return []; }
 }
 
 export function isFresh(fetchedAt, maxAgeMs){
