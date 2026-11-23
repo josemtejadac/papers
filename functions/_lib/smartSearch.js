@@ -10,9 +10,10 @@
 //      la persona busca, y se quedan los mejores. Lo que no tiene que ver queda fuera.
 // Si la IA no está disponible o falla, se vuelve a la búsqueda simple de siempre.
 
-const LLM_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+import { runChat } from './llm.js';
+
 const EMBED_MODEL = '@cf/baai/bge-base-en-v1.5';
-const INTERPRET_TIMEOUT_MS = 7000;
+const INTERPRET_TIMEOUT_MS = 9000;
 const EMBED_TIMEOUT_MS = 6000;
 export const CANDIDATES = 25;
 
@@ -57,12 +58,11 @@ export async function interpretQuery(env, text, lang){
     '"categories": ["2 to 6 arXiv category codes where those papers are published, e.g. econ.GN, physics.soc-ph, cs.CY, q-bio.NC, cs.LG, stat.AP"], ' +
     '"meaning": "one English sentence describing exactly what the person is looking for"}';
   try {
-    const res = await withTimeout(env.AI.run(LLM_MODEL, {
-      messages: [{ role: 'system', content: system }, { role: 'user', content: q }],
-      max_tokens: 220, temperature: 0.1
-    }), INTERPRET_TIMEOUT_MS);
-    const data = parseJsonLoose(res && res.response);
-    if (!data){ lastInterpretIssue = 'bad-json: ' + String(res && (typeof res.response === 'string' ? res.response : JSON.stringify(res))).slice(0, 160); return null; }
+    const { text: out } = await runChat(env,
+      [{ role: 'system', content: system }, { role: 'user', content: q }],
+      { maxTokens: 260, timeoutMs: INTERPRET_TIMEOUT_MS });
+    const data = parseJsonLoose(out);
+    if (!data){ lastInterpretIssue = 'bad-json: ' + String(out).slice(0, 160); return null; }
     const keywords = Array.from(new Set((Array.isArray(data.keywords) ? data.keywords : [])
       .map(cleanTerm).filter(k => k && k.split(' ').length <= 3))).slice(0, 5);
     const categories = Array.from(new Set((Array.isArray(data.categories) ? data.categories : [])

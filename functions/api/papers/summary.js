@@ -4,16 +4,10 @@
 // Workers AI. Se cachea en D1 para no repetir el trabajo con la misma persona u otra.
 
 import { json, clean, safe } from '../../_lib/util.js';
+import { runChat } from '../../_lib/llm.js';
 
 const LANG_NAMES = { es:'español', en:'inglés', pt:'portugués', fr:'francés' };
-const SUMMARY_TIMEOUT_MS = 6000;
-
-function withTimeout(promise, ms){
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
-  ]);
-}
+const SUMMARY_TIMEOUT_MS = 9000;
 
 async function handlePost({ request, env }){
   const body = await request.json().catch(() => null);
@@ -36,11 +30,8 @@ async function handlePost({ request, env }){
   const langName = LANG_NAMES[lang] || LANG_NAMES.es;
   try {
     const prompt = `Resume el siguiente resumen científico en máximo 2 frases simples y claras, en ${langName}, sin tecnicismos innecesarios. Responde solo con el resumen, sin introducciones:\n\n${abstract}`;
-    const result = await withTimeout(
-      env.AI.run('@cf/meta/llama-3.1-8b-instruct', { messages: [{ role: 'user', content: prompt }], max_tokens: 150 }),
-      SUMMARY_TIMEOUT_MS
-    );
-    const summary = (result && typeof result.response === 'string') ? result.response.trim() : '';
+    const { text } = await runChat(env, [{ role: 'user', content: prompt }], { maxTokens: 180, timeoutMs: SUMMARY_TIMEOUT_MS });
+    const summary = String(text || '').trim();
     if (!summary) return json({ summary: null });
     if (env.DB) {
       env.DB.prepare(
