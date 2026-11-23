@@ -617,10 +617,7 @@ async function loadHomeDeck(query){
     tag.innerHTML = 'arXiv no respondió · mostrando resultados guardados'+(homeQuery?' para «'+esc(homeQuery)+'»':'')+' <button id="home-query-retry">reintentar</button>';
     document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
   } else if(homeQuery){
-    const oneWord = homeQuery.split(/\s+/).filter(w=>w.length>2).length < 2;
-    tag.style.display='flex';
-    tag.innerHTML = '<span>Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>' +
-      (oneWord ? '<br><span style="opacity:.85;">Tip: con 2–3 palabras es más preciso (ej. «violencia familiar», «crianza de los hijos»).</span>' : '') + '</span>';
+    tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
     const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
   } else { tag.style.display='none'; tag.innerHTML=''; }
 }

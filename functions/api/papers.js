@@ -15,6 +15,7 @@ import {
   fetchArxivXml, getCachedPapers, saveCachedPapers, getCachedQuery, saveCachedQuery,
   lookupPapers, isFresh, QUERY_FRESH_MS
 } from '../_lib/arxivFetch.js';
+import { interpretQuery, buildSmartQuery, rerankByMeaning, CANDIDATES } from '../_lib/smartSearch.js';
 
 const MAX_RESULTS = 15;
 
@@ -44,7 +45,7 @@ async function handleGet({ request, env, waitUntil }){
 
     // La clave usa la búsqueda tal como la escribió la persona: si ya se buscó antes, ni siquiera
     // hace falta volver a traducir el término ni consultar arXiv.
-    const queryKey = JSON.stringify({ v: 2, q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
+    const queryKey = JSON.stringify({ v: 3, q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
     const cachedQuery = await getCachedQuery(env, queryKey);
 
     if (cachedQuery && isFresh(cachedQuery.fetchedAt, QUERY_FRESH_MS)) {
@@ -55,31 +56,46 @@ async function handleGet({ request, env, waitUntil }){
 
     if (!entries) {
       try {
-        // arXiv es casi todo en inglés: una búsqueda en español no encuentra nada aunque el tema
-        // sí esté cubierto. Se traduce el término al inglés antes de mandarlo (si hay IA).
-        const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : '';
-        const parts = [];
-        if (categories.length) parts.push('(' + categories.map(c => 'cat:' + c).join(' OR ') + ')');
-        const textQuery = buildTextQuery(q);
-        if (textQuery) parts.push(textQuery);
-        if (from || to) {
-          const d0 = (from || '1991-01-01').replace(/-/g, '') + '0000';
-          const d1 = (to || '2100-01-01').replace(/-/g, '') + '2359';
-          parts.push(`submittedDate:[${d0} TO ${d1}]`);
+        const dateClause = (from || to)
+          ? `submittedDate:[${(from || '1991-01-01').replace(/-/g, '')}0000 TO ${(to || '2100-01-01').replace(/-/g, '')}2359]`
+          : '';
+        const fetchList = async (searchQuery, sortBy, count, offset) => {
+          const apiUrl = new URL('https://export.arxiv.org/api/query');
+          apiUrl.searchParams.set('search_query', searchQuery);
+          apiUrl.searchParams.set('sortBy', sortBy);
+          apiUrl.searchParams.set('sortOrder', 'descending');
+          apiUrl.searchParams.set('start', String(offset || 0));
+          apiUrl.searchParams.set('max_results', String(count));
+          return parseArxivFeed(await fetchArxivXml(apiUrl.toString()));
+        };
+
+        // Búsqueda que entiende el sentido (ver _lib/smartSearch.js). Si la IA no está o falla,
+        // interp es null y se usa la búsqueda simple de abajo.
+        const interp = (qRaw && start === 0) ? await interpretQuery(env, qRaw, lang) : null;
+        if (interp) {
+          let candidates = await fetchList(buildSmartQuery(interp, categories, dateClause), 'relevance', CANDIDATES);
+          if (candidates.length < max && !categories.length && interp.categories.length) {
+            // Pocas coincidencias en esas áreas: se amplía a todo arXiv; el orden por significado
+            // deja al final lo que no tiene que ver.
+            const more = await fetchList(buildSmartQuery({ ...interp, categories: [] }, [], dateClause), 'relevance', CANDIDATES).catch(() => []);
+            const seen = new Set(candidates.map(e => e.id));
+            candidates = candidates.concat(more.filter(e => !seen.has(e.id)));
+          }
+          entries = (await rerankByMeaning(env, candidates, interp.meaning)).slice(0, max);
+        } else {
+          // arXiv es casi todo en inglés: se traduce el término al inglés antes de mandarlo (si hay IA).
+          const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : '';
+          const parts = [];
+          if (categories.length) parts.push('(' + categories.map(c => 'cat:' + c).join(' OR ') + ')');
+          const textQuery = buildTextQuery(q);
+          if (textQuery) parts.push(textQuery);
+          if (dateClause) parts.push(dateClause);
+          if (!parts.length) parts.push('cat:cs.AI');
+          // Con 2+ palabras: lo más relacionado primero. Con una sola, lo más nuevo (el orden por
+          // relevancia de arXiv con una palabra trae cosas viejas y de otras áreas).
+          const sortBy = textQuery && textQuery.includes(' AND ') ? 'relevance' : 'submittedDate';
+          entries = await fetchList(parts.join(' AND '), sortBy, max, start);
         }
-        if (!parts.length) parts.push('cat:cs.AI');
-
-        const apiUrl = new URL('https://export.arxiv.org/api/query');
-        apiUrl.searchParams.set('search_query', parts.join(' AND '));
-        // Con 2+ palabras: lo más relacionado primero (funciona bien: "violencia doméstica" trae
-        // justo eso). Con una sola palabra, el orden por relevancia de arXiv trae cosas viejas y de
-        // otras áreas ("transformers" -> "transform" de matemáticas), así que ahí va lo más nuevo.
-        apiUrl.searchParams.set('sortBy', textQuery && textQuery.includes(' AND ') ? 'relevance' : 'submittedDate');
-        apiUrl.searchParams.set('sortOrder', 'descending');
-        apiUrl.searchParams.set('start', String(start));
-        apiUrl.searchParams.set('max_results', String(max));
-
-        entries = parseArxivFeed(await fetchArxivXml(apiUrl.toString()));
         saveCachedPapers(env, entries, waitUntil);
         saveCachedQuery(env, queryKey, entries.map(e => e.id), waitUntil);
       } catch (e) {
