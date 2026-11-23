@@ -21,12 +21,14 @@ const FETCH_TIMEOUT_MS = 8000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Trae el XML de arXiv. Reintenta una vez si arXiv limita (429), está caído (5xx) o no responde.
-export async function fetchArxivXml(url){
+export async function fetchArxivXml(url, opts){
+  const attempts = (opts && opts.attempts) || 2;
+  const timeoutMs = (opts && opts.timeoutMs) || FETCH_TIMEOUT_MS;
   let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     // Tope de tiempo por intento: si arXiv se cuelga, la persona no espera casi un minuto.
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const res = await fetch(url, {
         headers: { 'User-Agent': USER_AGENT },
@@ -42,7 +44,7 @@ export async function fetchArxivXml(url){
     } finally {
       clearTimeout(timer);
     }
-    if (attempt === 0) await sleep(RETRY_DELAY_MS);
+    if (attempt < attempts - 1) await sleep(RETRY_DELAY_MS);
   }
   throw lastError || new Error('arxiv failed');
 }
