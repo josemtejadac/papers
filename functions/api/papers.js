@@ -15,7 +15,8 @@ import {
   fetchArxivXml, getCachedPapers, saveCachedPapers, getCachedQuery, saveCachedQuery,
   lookupPapers, isFresh, QUERY_FRESH_MS
 } from '../_lib/arxivFetch.js';
-import { interpretQuery, buildSmartQuery, rerankByMeaning, CANDIDATES } from '../_lib/smartSearch.js';
+import * as smart from '../_lib/smartSearch.js';
+const { interpretQuery, buildSmartQuery, rerankByMeaning, CANDIDATES } = smart;
 
 const MAX_RESULTS = 15;
 
@@ -27,6 +28,7 @@ async function handleGet({ request, env, waitUntil }){
 
   let entries;
   let stale = false;
+  let searchMode = 'cache'; // diagnóstico: cómo se resolvió la búsqueda (smart / simple: motivo / cache)
 
   const idsParam = clean(url.searchParams.get('ids'), 300);
   if (idsParam) {
@@ -72,6 +74,7 @@ async function handleGet({ request, env, waitUntil }){
         // Búsqueda que entiende el sentido (ver _lib/smartSearch.js). Si la IA no está o falla,
         // interp es null y se usa la búsqueda simple de abajo.
         const interp = (qRaw && start === 0) ? await interpretQuery(env, qRaw, lang) : null;
+        searchMode = interp ? 'smart' : (qRaw ? 'simple: ' + (smart.lastInterpretIssue || 'skipped') : 'recent');
         if (interp) {
           let candidates = await fetchList(buildSmartQuery(interp, categories, dateClause), 'relevance', CANDIDATES);
           if (candidates.length < max && !categories.length && interp.categories.length) {
@@ -112,7 +115,7 @@ async function handleGet({ request, env, waitUntil }){
   }
 
   const withLang = await translateEntries(env, entries, lang === 'en' ? 'en' : lang, waitUntil);
-  return json({ papers: withLang, count: withLang.length, lang, stale });
+  return json({ papers: withLang, count: withLang.length, lang, stale, searchMode });
 }
 
 // Arma la parte de texto de la búsqueda para arXiv. Cada palabra importante debe aparecer en el

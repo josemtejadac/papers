@@ -27,7 +27,11 @@ function cleanTerm(t){
   return String(t || '').toLowerCase().replace(/[^\p{L}\p{N}\s\-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
 }
 
+// Último motivo por el que no se pudo interpretar (para diagnóstico en la respuesta de la API).
+export let lastInterpretIssue = '';
+
 function parseJsonLoose(text){
+  if (text && typeof text === 'object') return text; // algunas versiones ya entregan el JSON armado
   const s = String(text || '');
   const start = s.indexOf('{'), end = s.lastIndexOf('}');
   if (start < 0 || end <= start) return null;
@@ -36,7 +40,8 @@ function parseJsonLoose(text){
 
 // Paso 1: interpretar la búsqueda. Devuelve { english, keywords[], categories[], meaning } o null.
 export async function interpretQuery(env, text, lang){
-  if (!env.AI || typeof env.AI.run !== 'function') return null;
+  lastInterpretIssue = '';
+  if (!env.AI || typeof env.AI.run !== 'function'){ lastInterpretIssue = 'no-ai'; return null; }
   const q = String(text || '').trim().slice(0, 200);
   if (!q) return null;
   const langName = LANG_NAMES[lang] || 'Spanish';
@@ -57,17 +62,18 @@ export async function interpretQuery(env, text, lang){
       max_tokens: 220, temperature: 0.1
     }), INTERPRET_TIMEOUT_MS);
     const data = parseJsonLoose(res && res.response);
-    if (!data) return null;
+    if (!data){ lastInterpretIssue = 'bad-json: ' + String(res && (typeof res.response === 'string' ? res.response : JSON.stringify(res))).slice(0, 160); return null; }
     const keywords = Array.from(new Set((Array.isArray(data.keywords) ? data.keywords : [])
       .map(cleanTerm).filter(k => k && k.split(' ').length <= 3))).slice(0, 5);
     const categories = Array.from(new Set((Array.isArray(data.categories) ? data.categories : [])
       .map(c => String(c || '').trim()).filter(c => CATEGORY_RE.test(c)))).slice(0, 6);
     const english = cleanTerm(data.english) || keywords[0] || '';
     const meaning = String(data.meaning || '').slice(0, 300).trim() || english;
-    if (!keywords.length && !english) return null;
+    if (!keywords.length && !english){ lastInterpretIssue = 'empty'; return null; }
     if (!keywords.length) keywords.push(english);
     return { english, keywords, categories, meaning };
   } catch (e) {
+    lastInterpretIssue = 'error: ' + String(e && e.message || e).slice(0, 160);
     return null;
   }
 }
