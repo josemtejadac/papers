@@ -47,7 +47,7 @@ async function handleGet({ request, env, waitUntil }){
 
     // La clave usa la búsqueda tal como la escribió la persona: si ya se buscó antes, ni siquiera
     // hace falta volver a traducir el término ni consultar arXiv.
-    const queryKey = JSON.stringify({ v: 3, q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
+    const queryKey = JSON.stringify({ v: 4, q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
     const cachedQuery = await getCachedQuery(env, queryKey);
 
     if (cachedQuery && isFresh(cachedQuery.fetchedAt, QUERY_FRESH_MS)) {
