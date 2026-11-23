@@ -279,7 +279,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 .home-search{ display:flex; gap:8px; padding:4px 20px 14px; flex:0 0 auto; }
 .home-search input{ flex:1; border:var(--border-w) solid var(--line); border-radius:100px; padding:9px 15px; font-size:16px; background:var(--paper-2); color:var(--ink); }
 .home-search button{ border:var(--border-w) solid var(--line); background:var(--paper); color:var(--ink-soft); border-radius:100px; padding:0 16px; font-size:13px; white-space:nowrap; }
-.home-query-tag{ padding:0 20px 10px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+.home-query-tag{ padding:0 20px 10px; font-size:12px; color:var(--muted); display:flex; align-items:center; flex-wrap:wrap; gap:4px 6px; flex:0 0 auto; }
 .home-query-tag button{ border:none; background:none; color:var(--accent); font-size:12px; text-decoration:underline; padding:0; }
 #home-filters-btn{ font-size:12px; padding:0 10px; }
 .home-filters{ display:flex; flex-direction:column; gap:8px; padding:0 20px 12px; flex:0 0 auto; }
@@ -327,7 +327,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="helptext">Desliza · toca la tarjeta para leerla</div>
     </div>
     <div class="home-search">
-      <input id="home-search" type="search" placeholder="Buscar en arXiv (ej. violencia familiar)…" autocomplete="off">
+      <input id="home-search" type="search" placeholder="Busca un tema…" autocomplete="off">
       <button id="home-filters-btn" aria-label="Filtros">Filtros</button>
       <button id="home-search-btn">Buscar</button>
     </div>
@@ -617,9 +617,32 @@ async function loadHomeDeck(query){
     tag.innerHTML = 'arXiv no respondió · mostrando resultados guardados'+(homeQuery?' para «'+esc(homeQuery)+'»':'')+' <button id="home-query-retry">reintentar</button>';
     document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
   } else if(homeQuery){
-    tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
+    tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button> · <button class="arxiv-info-btn">¿qué hay en arXiv?</button>';
     const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
-  } else { tag.style.display='none'; tag.innerHTML=''; }
+  } else {
+    tag.style.display='flex'; tag.innerHTML = 'Recomendados según tus intereses · <button class="arxiv-info-btn">¿qué hay en arXiv?</button>';
+  }
+  tag.querySelectorAll('.arxiv-info-btn').forEach(b=>b.addEventListener('click', openArxivInfoSheet));
+}
+function openArxivInfoSheet(){
+  openSheet({
+    title:'¿Qué se encuentra en arXiv?',
+    bodyHtml:
+      '<div style="font-size:14px; line-height:1.6;">' +
+      '<p style="margin:0 0 10px;">arXiv es un archivo abierto y gratuito de papers científicos de la Universidad de Cornell, con más de dos millones de artículos. Sus áreas son:</p>' +
+      '<ul style="margin:0 0 10px; padding-left:20px;">' +
+      '<li>Física y astronomía</li>' +
+      '<li>Matemáticas y estadística</li>' +
+      '<li>Computación e inteligencia artificial</li>' +
+      '<li>Biología cuantitativa: neurociencia, genética, poblaciones…</li>' +
+      '<li>Economía y finanzas cuantitativas</li>' +
+      '<li>Ingeniería eléctrica y de sistemas</li>' +
+      '</ul>' +
+      '<p style="margin:0 0 10px;">También hay estudios sobre temas sociales (familia, educación, salud mental, redes sociales) cuando se investigan con datos o métodos cuantitativos. No es una base de medicina clínica, psicología ni humanidades: para eso existen otras, como PubMed o SciELO.</p>' +
+      '<p style="margin:0 0 10px;">Muchos papers son <i>preprints</i>: versiones que publican los propios autores, a veces antes de la revisión por pares.</p>' +
+      '<p style="margin:0;">Puedes buscar en español: la app entiende lo que quieres decir, busca en las áreas que corresponden y traduce los resultados.</p>' +
+      '</div>'
+  });
 }
 document.getElementById('library-search').addEventListener('input', e=>{ libraryQuery = e.target.value; renderLibrary(); });
 document.getElementById('home-filters-btn').addEventListener('click', ()=>{

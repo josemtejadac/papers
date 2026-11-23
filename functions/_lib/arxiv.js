@@ -1,6 +1,8 @@
 // Cliente de la API pública de arXiv (http://export.arxiv.org/api) + traducción opcional
 // con Cloudflare Workers AI, cacheada en D1. No es una ruta: no exporta handlers.
 
+import { runChat } from './llm.js';
+
 const ENTITIES = { lt:'<', gt:'>', quot:'"', apos:"'", amp:'&' };
 function decodeXml(s){
   return String(s).replace(/&(lt|gt|quot|apos|amp);/g, (_, n) => ENTITIES[n])
@@ -94,8 +96,33 @@ function withTimeout(promise, ms){
 // Traduce un solo texto. Antes se pedían título+resumen juntos en una llamada, separados por una
 // marca de texto — pero el modelo no siempre respeta esa marca al traducir, y eso mezclaba o
 // perdía el resumen. Separado en una llamada por campo es más lento pero mucho más confiable.
+// Traductor principal: un modelo de lenguaje (Gemma 4, ver _lib/llm.js). Traduce mucho mejor que
+// m2m100 los términos técnicos (m2m100 llegó a poner "circuncisión" por "circumvention"), acepta el
+// resumen completo y además cuesta menos. Si falla, se usa m2m100 como respaldo.
+const MAX_LLM_TRANSLATE_CHARS = 3000;
+function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+async function llmTranslate(env, text, targetName, sourceName){
+  const input = text.length > MAX_LLM_TRANSLATE_CHARS ? text.slice(0, MAX_LLM_TRANSLATE_CHARS) : text;
+  const target = cap(targetName), source = cap(sourceName || 'english');
+  const { text: out } = await runChat(env, [
+    { role: 'system', content:
+      `You are a professional translator of scientific texts. Translate the user's text from ${source} to ${target}. ` +
+      `Use the standard technical terms in ${target}. Keep acronyms, model and dataset names, formulas, LaTeX, numbers and proper names exactly as they are. ` +
+      'Reply with ONLY the translation: no quotes, no notes, no explanations.' },
+    { role: 'user', content: input }
+  ], { maxTokens: Math.min(1500, Math.ceil(input.length / 2) + 60), timeoutMs: 20000 });
+  const clean = String(out || '').trim().replace(/^["“«]|["”»]$/g, '').trim();
+  if (!clean || clean.length < input.length * 0.4) throw new Error('translation looked broken');
+  return clean;
+}
+
 async function translateText(env, text, targetName, sourceName){
   if(!text) return '';
+  try { return await llmTranslate(env, text, targetName, sourceName); }
+  catch (e) { return m2mTranslate(env, text, targetName, sourceName); }
+}
+
+async function m2mTranslate(env, text, targetName, sourceName){
   const input = text.length > MAX_TRANSLATE_CHARS ? text.slice(0, MAX_TRANSLATE_CHARS) : text;
   const res = await env.AI.run('@cf/meta/m2m100-1.2b', { text: input, source_lang: sourceName || 'english', target_lang: targetName });
   const out = res && typeof res.translated_text === 'string' ? res.translated_text.trim() : '';
@@ -108,9 +135,10 @@ async function translateText(env, text, targetName, sourceName){
 // Títulos del tipo "Algo: subtítulo": el modelo suele traducir solo una de las dos partes y dejar
 // la otra en inglés. Se traduce cada parte por separado y se vuelven a unir.
 async function translateTitle(env, title, targetName){
+  try { return await llmTranslate(env, title, targetName); } catch (e) { /* respaldo abajo */ }
   const m = String(title || '').match(/^(.{4,}?)\s*:\s*(.{4,})$/);
-  if (!m) return translateText(env, title, targetName);
-  const [a, b] = await Promise.all([translateText(env, m[1], targetName), translateText(env, m[2], targetName)]);
+  if (!m) return m2mTranslate(env, title, targetName);
+  const [a, b] = await Promise.all([m2mTranslate(env, m[1], targetName), m2mTranslate(env, m[2], targetName)]);
   return a + ': ' + b;
 }
 
@@ -175,14 +203,17 @@ export async function translateEntries(env, entries, lang, waitUntil){
   const hasAI = !!(env.AI && typeof env.AI.run === 'function');
   const hasDB = !!env.DB;
 
-  let cached = new Map();
+  // Las traducciones del traductor nuevo se guardan como "es2" (etc.). Las antiguas ("es", de
+  // m2m100) solo se usan para mostrar algo en español mientras la nueva se termina de generar.
+  const cacheLang = lang + '2';
+  let cached = new Map(), oldCached = new Map();
   if (hasDB && entries.length) {
     try {
       const ids = entries.map(e => e.id);
       const { results } = await env.DB.prepare(
-        `SELECT arxiv_id, title, abstract FROM paper_translations WHERE lang = ? AND arxiv_id IN (${ids.map(() => '?').join(',')})`
-      ).bind(lang, ...ids).all();
-      results.forEach(r => cached.set(r.arxiv_id, r));
+        `SELECT arxiv_id, lang, title, abstract FROM paper_translations WHERE lang IN (?, ?) AND arxiv_id IN (${ids.map(() => '?').join(',')})`
+      ).bind(cacheLang, lang, ...ids).all();
+      results.forEach(r => (r.lang === cacheLang ? cached : oldCached).set(r.arxiv_id, r));
     } catch (e) {
       // Si la caché de D1 falla, no por eso se pierde la búsqueda: se sigue sin caché para esta vez.
     }
@@ -190,11 +221,18 @@ export async function translateEntries(env, entries, lang, waitUntil){
 
   return Promise.all(entries.map(async (e) => {
     const hit = cached.get(e.id);
+    const old = oldCached.get(e.id);
     if (!hasAI) {
       // Sin IA en este request, pero igual se sirve lo que ya hubiera quedado cacheado antes.
-      return { ...e, title: (hit && hit.title) || e.title, abstract: (hit && hit.abstract) || e.abstract, titleEn: e.title, abstractEn: e.abstract };
+      return { ...e,
+        title: (hit && hit.title) || (old && old.title) || e.title,
+        abstract: (hit && hit.abstract) || (old && old.abstract) || e.abstract,
+        titleEn: e.title, abstractEn: e.abstract };
     }
-    const result = await translateOne(env, e, hit, targetName, lang, hasDB, waitUntil);
-    return { ...e, title: result.title, abstract: result.abstract, titleEn: e.title, abstractEn: e.abstract };
+    const result = await translateOne(env, e, hit, targetName, cacheLang, hasDB, waitUntil);
+    // Si la traducción nueva no alcanzó a llegar (quedó en inglés), se muestra la antigua si existe.
+    const title = (result.title === e.title && old && old.title) ? old.title : result.title;
+    const abstract = (result.abstract === e.abstract && old && old.abstract) ? old.abstract : result.abstract;
+    return { ...e, title, abstract, titleEn: e.title, abstractEn: e.abstract };
   }));
 }
