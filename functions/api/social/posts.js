@@ -9,6 +9,8 @@ function mapRow(row, likedIds, mePublicId){
   return {
     id: row.id,
     authorName: row.author_name,
+    // Id público (el mismo de los chats): permite tocar el nombre y enviarle un mensaje privado.
+    authorId: row.author_public_id || null,
     authorSub: row.author_sub,
     text: row.text,
     paperId: row.paper_id,

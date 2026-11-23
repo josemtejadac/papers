@@ -1382,10 +1382,9 @@ function openSharePublicSheet(paperId){
 }
 function openShareContactsSheet(paperId){
   requireIdentity(async ()=>{
-    openSheet({ title:'Enviar por mensajería de Abstracta', bodyHtml:'<div class="empty-state">Cargando personas…</div>' });
-    let users = [];
-    try{ users = await searchUsers(''); }
-    catch(e){ closeSheet(); toast('No se pudo cargar la lista de personas'); return; }
+    openSheet({ title:'Enviar por mensajería de Abstracta', bodyHtml:'<div class="empty-state">Cargando…</div>' });
+    await refreshInbox();
+    const users = knownContacts();
     const general = { convId:'general', name:'Sala pública · Chile', sub:'La ven todos los usuarios', group:true };
     let targets = [general].concat(users.map(u=>({ convId:dmConvId(u.publicId), name:u.handle, sub:u.affiliation||'', group:false })));
     const sel = new Set();
@@ -1396,7 +1395,7 @@ function openShareContactsSheet(paperId){
           <div class="info"><div class="n">${esc(t.name)}</div><div class="s">${esc(t.sub)}</div></div>
           <div class="check">${icon('check')}</div>
         </div>`).join('');
-      return rows || '<div class="empty-state">Nadie coincide con esa búsqueda.</div>';
+      return rows || '<div class="empty-state">'+esc(peopleEmptyMessage(q))+'</div>';
     }
     function wireRows(){
       document.querySelectorAll('#share-contacts .pick-row').forEach(row=>{
@@ -1408,7 +1407,7 @@ function openShareContactsSheet(paperId){
       });
     }
     const body = `
-      <input class="share-comment" id="share-search" type="text" placeholder="Buscar por nombre o código (Jose#4821)…" autocomplete="off" style="margin-top:0;">
+      <input class="share-comment" id="share-search" type="text" placeholder="Código de la persona, ej. Jose#5501" autocomplete="off" style="margin-top:0;">
       <div id="share-contacts" style="margin-top:8px;">${listHtml('')}</div>
       <textarea class="share-comment" id="share-comment" rows="2" maxlength="1000" placeholder="Añade un comentario (opcional)"></textarea>`;
     openSheet({
@@ -1429,7 +1428,7 @@ function openShareContactsSheet(paperId){
       const q = e.target.value.trim();
       const ticket = ++latest;
       try{
-        const found = await searchUsers(q);
+        const found = await findPeople(q);
         if(ticket !== latest) return;
         const keep = targets.filter(t=>sel.has(t.convId));
         const fresh = found.map(u=>({ convId:dmConvId(u.publicId), name:u.handle, sub:u.affiliation||'', group:false }));
@@ -1504,8 +1503,8 @@ function postCardHtml(post){
   }
   return `<div class="post-card" data-id="${esc(post.id)}">
     <div class="post-head">
-      <div class="avatar">${esc(initials(post.authorName)||'?')}</div>
-      <div class="post-author"><div class="n">${esc(post.authorName)}</div><div class="s">${esc(post.authorSub||'')}</div></div>
+      <div class="avatar" ${post.authorId?'data-act="author" style="cursor:pointer;"':''}>${esc(initials(post.authorName)||'?')}</div>
+      <div class="post-author" ${post.authorId?'data-act="author" style="cursor:pointer;"':''}><div class="n">${esc(post.authorName)}</div><div class="s">${esc(post.authorSub||'')}</div></div>
       ${post.mine? `<button class="post-own-menu" data-act="menu" aria-label="Opciones">${icon('more')}</button>` : ''}
     </div>
     ${post.text ? `<div class="post-text">${esc(post.text)}</div>` : ''}
@@ -1555,6 +1554,10 @@ function renderSocialFeed(){
     card.querySelector('[data-act="like"]').addEventListener('click', ()=> toggleLikePost(id));
     card.querySelector('[data-act="reply"]').addEventListener('click', ()=> openReplySheet(id));
     card.querySelector('[data-act="quote"]').addEventListener('click', ()=> openQuoteSheet(id));
+    const post = socialPosts.find(x=>x.id===id);
+    card.querySelectorAll('[data-act="author"]').forEach(el=> el.addEventListener('click', ()=>{
+      if(post && post.authorId) openPersonSheet({ publicId:post.authorId, handle:post.authorName, name:post.authorName, affiliation:post.authorSub });
+    }));
     const menuBtn = card.querySelector('[data-act="menu"]');
     if(menuBtn) menuBtn.addEventListener('click', ()=> openPostMenuSheet(id));
   });
@@ -1755,61 +1758,99 @@ function openDMInbox(){
     });
   });
 }
-// Busca personas en el servidor (por nombre o afiliación) y excluye a quien está usando la app.
+// Privacidad: la app nunca muestra la lista de todas las personas registradas. Se puede escribir a
+// alguien (1) con quien ya conversaste, (2) escribiendo su código exacto (ej. Jose#5501) o
+// (3) tocando su nombre en Social o en la sala general.
+function knownContacts(){
+  return (chatState.inbox || [])
+    .filter(c=>c.kind==='dm' && c.peer && c.peer.publicId)
+    .map(c=>({ publicId:c.peer.publicId, name:c.peer.name, handle:c.peer.handle, affiliation:c.peer.affiliation || '' }));
+}
+function isFullCode(q){ return /^.+#\s*\d{4,6}$/.test(String(q || '').trim()); }
+// Busca a UNA persona por su código exacto en el servidor; sin código completo no consulta nada.
 async function searchUsers(q){
-  const data = await api('/api/users' + (q ? '?q=' + encodeURIComponent(q) : ''));
+  if(!isFullCode(q)) return [];
+  const data = await api('/api/users?q=' + encodeURIComponent(q.trim()));
   return data.users.filter(u=>u.publicId !== session.publicId);
+}
+// Contactos conocidos que coinciden con lo escrito + la persona del código exacto, si existe.
+async function findPeople(q){
+  const text = String(q || '').trim().toLowerCase();
+  const local = knownContacts().filter(u=>!text || (u.handle || '').toLowerCase().includes(text) || (u.affiliation || '').toLowerCase().includes(text));
+  let remote = [];
+  if(isFullCode(text)) remote = await searchUsers(q);
+  const seen = new Set(local.map(u=>u.publicId));
+  return local.concat(remote.filter(u=>!seen.has(u.publicId)));
+}
+function peopleEmptyMessage(q){
+  if(!q) return 'Todavía no conversas con nadie. Pídele a la persona su código (lo ve en Perfil → «Mi código») y escríbelo arriba, o toca su nombre en Social.';
+  if(!isFullCode(q)) return 'Escribe el código completo de la persona, por ejemplo Jose#5501.';
+  return 'No encontramos a nadie con ese código. Revisa que esté bien escrito.';
+}
+// Panel de una persona (al tocar su nombre en Social o en la sala general).
+function openPersonSheet(person){
+  if(!person || !person.publicId) return;
+  if(person.publicId === session.publicId){ toast('Ese eres tú'); return; }
+  openSheet({
+    title: person.handle || person.name || 'Persona',
+    sub: person.affiliation || 'Miembro de la comunidad Abstracta',
+    bodyHtml: '<div style="display:flex; align-items:center; gap:12px; padding:4px 0 8px;"><div class="avatar">'+esc(initials(person.name || person.handle || '?') || '?')+'</div><div style="font-size:14px; color:var(--muted);">Los mensajes privados solo los ven ustedes dos.</div></div>',
+    footerText: 'Enviar mensaje privado',
+    onConfirm: ()=>{
+      closeSheet();
+      requireIdentity(()=> openThread(dmConvId(person.publicId), person.handle || person.name, 'dm'));
+    }
+  });
 }
 function debounce(fn, ms){
   let t = null;
   return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), ms); };
 }
 async function openNewConvoPicker(){
-  openSheet({ title:'Nueva conversación', sub:'Busca por nombre o por código completo, ej. Jose#4821', bodyHtml:'<div class="empty-state">Cargando personas…</div>' });
+  openSheet({ title:'Nueva conversación', sub:'Elige a alguien con quien ya conversaste o escribe su código, ej. Jose#5501', bodyHtml:'<div class="empty-state">Cargando…</div>' });
   function listHtml(users, q){
     const rows = users.map(u=>`
       <div class="pick-row" data-pid="${esc(u.publicId)}" data-name="${esc(u.handle)}">
-        <div class="avatar">${esc(initials(u.name)||'?')}</div>
+        <div class="avatar">${esc(initials(u.name || u.handle || '?')||'?')}</div>
         <div class="info"><div class="n">${esc(u.handle)}</div><div class="s">${esc(u.affiliation||'')}</div></div>
       </div>`).join('');
-    if(rows) return rows;
-    return q ? '<div class="empty-state">Nadie coincide con esa búsqueda.</div>'
-             : '<div class="empty-state">Todavía no hay más personas en Abstracta. Comparte el link de la app para que se sumen, o escribe en la sala pública.</div>';
+    return rows || '<div class="empty-state">'+esc(peopleEmptyMessage(q))+'</div>';
   }
   function wire(){
     document.querySelectorAll('#new-convo-list .pick-row').forEach(row=>{
       row.addEventListener('click', ()=>{ closeSheet(); openThread(dmConvId(row.dataset.pid), row.dataset.name, 'dm'); });
     });
   }
-  let initial = [];
-  try{ initial = await searchUsers(''); }
-  catch(e){ closeSheet(); toast('No se pudo cargar la lista de personas'); return; }
+  await refreshInbox();
   const body = document.getElementById('sheet-body');
   if(!body) return;
   body.innerHTML =
-    '<input class="share-comment" id="convo-search" type="text" placeholder="Buscar por nombre o código (Jose#4821)…" autocomplete="off" style="margin-top:0;">' +
-    '<div id="new-convo-list" style="margin-top:8px;">'+listHtml(initial, '')+'</div>';
+    '<input class="share-comment" id="convo-search" type="text" placeholder="Código de la persona, ej. Jose#5501" autocomplete="off" style="margin-top:0;">' +
+    '<div id="new-convo-list" style="margin-top:8px;">'+listHtml(knownContacts(), '')+'</div>';
   wire();
   let latest = 0;
   document.getElementById('convo-search').addEventListener('input', debounce(async e=>{
     const q = e.target.value.trim();
     const ticket = ++latest;
     try{
-      const users = await searchUsers(q);
+      const users = await findPeople(q);
       if(ticket !== latest) return;
       const list = document.getElementById('new-convo-list');
       if(!list) return;
       list.innerHTML = listHtml(users, q);
       wire();
-    } catch(err){ /* mantiene la lista anterior */ }
-  }, 250));
+    } catch(err){
+      const list = document.getElementById('new-convo-list');
+      if(list && ticket === latest) list.innerHTML = '<div class="empty-state">'+esc(err.message || 'No se pudo buscar.')+'</div>';
+    }
+  }, 300));
 }
 
 function bubbleHtml(m){
   const mine = m.senderId === session.publicId;
   const p = m.paperId ? papersIndex[m.paperId] : null;
   const attach = m.paperId ? ('<div class="attach" data-pid="'+esc(m.paperId)+'">📄 '+esc(p ? p.title : 'Paper')+'</div>') : '';
-  const author = mine ? '' : '<span class="author">'+esc(m.senderName)+'</span>';
+  const author = mine ? '' : '<span class="author" data-pid="'+esc(m.senderId)+'" data-name="'+esc(m.senderName)+'" style="cursor:pointer;">'+esc(m.senderName)+'</span>';
   return '<div class="bubble '+(mine?'me':'them')+'">'+author+(m.text?esc(m.text):'')+attach+'</div>';
 }
 async function appendMessages(msgs){
@@ -1832,6 +1873,10 @@ async function appendMessages(msgs){
   const placeholder = box.querySelector('.empty-state'); if(placeholder) placeholder.remove();
   box.insertAdjacentHTML('beforeend', fresh.map(bubbleHtml).join(''));
   chatState.renderedSeq = fresh[fresh.length-1].seq;
+  box.querySelectorAll('.author[data-pid]:not([data-w])').forEach(a=>{
+    a.dataset.w = '1';
+    a.addEventListener('click', ()=>{ if(chatState.kind==='general') openPersonSheet({ publicId:a.dataset.pid, handle:a.dataset.name, name:a.dataset.name }); });
+  });
   box.querySelectorAll('.attach:not([data-w])').forEach(a=>{
     a.dataset.w = '1';
     a.addEventListener('click', ()=> openReader(a.dataset.pid));

@@ -1,40 +1,25 @@
-// GET  /api/users?q=texto      -> directorio público. q busca por nombre, afiliación o código ("Jose#48" / "#4821").
+// GET  /api/users?q=Nombre#1234 -> busca UNA persona por su código exacto (privacidad: no hay lista
+//                                 pública de usuarios; para escribirle a alguien hay que conocer su
+//                                 código, o tocar su nombre en la comunidad).
 // POST /api/users {deviceId, name, affiliation} -> registra o actualiza el nombre; asigna un código único (Nombre#1234)
 
 import { json, clean, validDeviceId, rateLimited, clientIp, tooMany, handleOf, safe } from '../_lib/util.js';
-
-function likeEscape(s){ return s.replace(/[\\%_]/g, '\\$&'); }
 
 function mapUser(r){
   return { publicId: r.public_id, name: r.name, tag: r.tag, handle: handleOf(r), affiliation: r.affiliation };
 }
 
 async function handleGet({ request, env }){
-  const raw = clean(new URL(request.url).searchParams.get('q'), 50).toLowerCase();
-  let stmt;
-  if(!raw){
-    stmt = env.DB.prepare('SELECT public_id, name, tag, affiliation FROM users ORDER BY updated_at DESC LIMIT 50');
-  } else if(raw.includes('#')){
-    const i = raw.indexOf('#');
-    const namePart = raw.slice(0, i).trim();
-    const tagPart = raw.slice(i + 1).trim();
-    const conds = []; const binds = [];
-    if(namePart){ conds.push("lower(name) LIKE ? ESCAPE '\\'"); binds.push('%' + likeEscape(namePart) + '%'); }
-    if(tagPart){ conds.push("tag LIKE ? ESCAPE '\\'"); binds.push(likeEscape(tagPart) + '%'); }
-    if(!conds.length) conds.push('1=1');
-    stmt = env.DB.prepare(
-      `SELECT public_id, name, tag, affiliation FROM users WHERE ${conds.join(' AND ')} ORDER BY name COLLATE NOCASE ASC, tag ASC LIMIT 50`
-    ).bind(...binds);
-  } else {
-    const like = '%' + likeEscape(raw) + '%';
-    stmt = env.DB.prepare(
-      `SELECT public_id, name, tag, affiliation FROM users
-       WHERE lower(name) LIKE ? ESCAPE '\\' OR lower(COALESCE(affiliation, '')) LIKE ? ESCAPE '\\' OR tag LIKE ? ESCAPE '\\'
-       ORDER BY name COLLATE NOCASE ASC, tag ASC LIMIT 50`
-    ).bind(like, like, likeEscape(raw) + '%');
-  }
-  const { results } = await stmt.all();
-  return json({ users: results.map(mapUser) });
+  const raw = clean(new URL(request.url).searchParams.get('q'), 60);
+  const m = raw.match(/^(.+?)\s*#\s*(\d{4,6})$/);
+  // Sin código completo no se devuelve a nadie: así no se puede recorrer el directorio.
+  if(!m) return json({ users: [] });
+  // Límite de búsquedas por conexión, para que no se puedan probar códigos al azar.
+  if(await rateLimited(env, 'usersearch-ip:' + clientIp(request), 60, 60)) return json({ error: 'Demasiadas búsquedas seguidas. Espera un momento.' }, 429);
+  const row = await env.DB.prepare(
+    'SELECT public_id, name, tag, affiliation FROM users WHERE lower(name) = lower(?) AND tag = ? LIMIT 1'
+  ).bind(m[1].trim(), m[2]).first();
+  return json({ users: row ? [mapUser(row)] : [] });
 }
 
 function randomTag(width){
