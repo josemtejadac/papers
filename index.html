@@ -292,6 +292,11 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
 .quick-summary{ font-size:13px; color:var(--ink-soft); background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:9px; padding:10px 12px; margin:10px 0; line-height:1.5; }
 .quick-summary:empty{ display:none; }
 .reader-ext-link{ display:block; text-align:center; margin-top:8px; font-size:12.5px; color:var(--muted); }
+.login-legal{ font-size:12px; color:var(--muted); text-align:center; line-height:1.5; margin-top:4px; }
+.login-legal button{ border:none; background:none; padding:0; color:var(--accent); text-decoration:underline; font:inherit; }
+.privacy-text h4{ margin:14px 0 4px; font-size:14px; }
+.privacy-text p, .privacy-text li{ font-size:13.5px; line-height:1.55; margin:0 0 6px; }
+.privacy-text ul{ margin:0 0 6px; padding-left:18px; }
 .arxiv-credit{ font-size:11px; color:var(--muted); text-align:center; padding:18px 24px 6px; line-height:1.5; }
 .compose-bar{ display:block; flex:0 0 auto; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 14px; text-align:left; background:var(--paper-2); border:var(--border-w) solid var(--line); border-radius:10px; color:var(--muted); font:inherit; font-size:14px; cursor:pointer; }
 .post-text{ white-space:pre-wrap; word-break:break-word; }
@@ -309,6 +314,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="login-tag">Descubre, guarda y comparte papers científicos con tu equipo.</div>
       <button class="btn-block primary" id="btn-create-account"></button>
       <button class="btn-block ghost" id="btn-login-account">Ya tengo cuenta · Entrar</button>
+      <div class="login-legal">Al continuar aceptas la <button id="btn-login-privacy">política de privacidad</button>. No vendemos tus datos ni usamos rastreo.</div>
     </div>
   </section>
 
@@ -397,7 +403,9 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="setting-row" id="row-lang"><div class="label">Preferencias de idioma</div><div class="value" id="lang-value"></div></div>
       <div class="setting-row" id="row-theme"><div class="label">Tema</div><div class="value" id="theme-value"></div></div>
       <div class="setting-row" id="row-install"><div class="label">Instalar app</div><div class="value">Añadir a inicio</div></div>
+      <div class="setting-row" id="row-privacy"><div class="label">Privacidad y términos</div><div class="value">Ver</div></div>
       <div class="setting-row danger" id="row-logout"><div class="label">Cierre de sesión</div></div>
+      <div class="setting-row danger" id="row-delete-account"><div class="label">Eliminar mi cuenta y mis datos</div></div>
     </div>
     <div class="arxiv-credit">Gracias a arXiv por el uso de su interoperabilidad de acceso abierto.<br>Cada paper conserva la licencia que su autor eligió en arXiv (muchos son CC BY 4.0 International); revísala en la página del paper antes de redistribuirlo.</div>
   </section>
@@ -1643,13 +1651,27 @@ function startChatPolling(){
   stopChatPolling();
   if(!hasIdentity()) return;
   refreshInbox();
+  // "Tiempo real" liviano: mientras la persona mira Social, el feed se revisa cada 5 s (solo se
+  // vuelve a dibujar si algo cambió); el aviso de mensajes nuevos, cada 10 s. Con la app en segundo
+  // plano no se consulta nada, y al volver a ella se actualiza al instante (ver visibilitychange).
+  let tick = 0;
   chatState.inboxTimer = setInterval(()=>{
     if(document.hidden) return;
-    refreshInbox();
-    const overlayOpen = document.getElementById('sheet').classList.contains('show') || document.getElementById('reader').classList.contains('open');
-    if(currentTab==='chat' && !chatState.convId && !overlayOpen) loadAndRenderSocialFeed(true);
-  }, 30000);
+    tick++;
+    if(tick % 2 === 0) refreshInbox();
+    if(socialFeedVisible()) loadAndRenderSocialFeed(true);
+  }, 5000);
 }
+function socialFeedVisible(){
+  const overlayOpen = document.getElementById('sheet').classList.contains('show') || document.getElementById('reader').classList.contains('open');
+  return currentTab==='chat' && !chatState.convId && !overlayOpen;
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden || !hasIdentity() || !session.loggedIn) return;
+  refreshInbox();
+  if(socialFeedVisible()) loadAndRenderSocialFeed(true);
+  if(chatState.convId) pollThread(false);
+});
 function previewOf(last, kind){
   if(!last) return kind==='general' ? 'Todos los que usan Abstracta en Chile. Escribe el primero.' : '';
   const mine = last.senderId === session.publicId;
@@ -1802,7 +1824,7 @@ async function openThread(convId, title, kind){
   pushLayer('thread');
   await pollThread(true);
   if(chatState.convId !== convId) return;
-  chatState.threadTimer = setInterval(()=>{ if(!document.hidden) pollThread(false); }, 4000);
+  chatState.threadTimer = setInterval(()=>{ if(!document.hidden) pollThread(false); }, 3000);
   if(!('ontouchstart' in window)) document.getElementById('thread-input').focus();
 }
 function leaveThread(){
@@ -1944,6 +1966,67 @@ document.getElementById('row-theme').addEventListener('click', ()=>{
   });
 });
 document.getElementById('row-account').addEventListener('click', openAccountSheet);
+/* ================= PRIVACIDAD (Ley 21.719) ================= */
+function openPrivacySheet(){
+  openSheet({ title:'Privacidad y términos', bodyHtml:
+    '<div class="privacy-text">' +
+    '<p>Abstracta guarda solo lo mínimo para funcionar. Aquí está exactamente qué, para qué y cómo borrarlo.</p>' +
+    '<h4>Qué guardamos y para qué</h4><ul>' +
+    '<li><b>Nombre y afiliación</b> (la afiliación es opcional): para que te reconozcan en la comunidad y en el chat.</li>' +
+    '<li><b>Correo y contraseña</b>, solo si creas una cuenta: para entrar desde otro teléfono. La contraseña se guarda cifrada; nadie puede leerla, ni siquiera nosotros.</li>' +
+    '<li><b>Tus publicaciones, respuestas, «me gusta» y mensajes</b>: para mostrárselos a quien corresponde.</li>' +
+    '<li><b>Respaldo de tu biblioteca y preferencias</b>, solo si tienes cuenta: para recuperarlos al cambiar de teléfono.</li></ul>' +
+    '<h4>Qué no hacemos</h4><ul>' +
+    '<li>No pedimos RUT, teléfono, ubicación, fotos ni contactos.</li>' +
+    '<li>No usamos cookies de rastreo ni publicidad personalizada.</li>' +
+    '<li>No vendemos ni compartimos tus datos con terceros.</li>' +
+    '<li>No te enviamos correos.</li></ul>' +
+    '<h4>Qué es público</h4>' +
+    '<p>Las publicaciones del feed y los mensajes de la sala general los ven todas las personas que usan la app. Los chats directos solo los ven quienes participan en ellos.</p>' +
+    '<h4>Dónde se guarda</h4>' +
+    '<p>En los servidores de Cloudflare que usa la app. Tu biblioteca, los papers vistos y los PDF descargados también quedan en tu propio teléfono para usarlos sin internet. Las búsquedas se envían a arXiv y el texto de los papers a la IA de Cloudflare para traducirlos, sin datos tuyos.</p>' +
+    '<h4>Tus derechos</h4>' +
+    '<p>Puedes ver y corregir tu nombre en Perfil, y <b>eliminar tu cuenta y todos tus datos cuando quieras</b> desde Perfil → «Eliminar mi cuenta y mis datos». Se borra al instante y no se puede deshacer. (Ley 21.719 de protección de datos personales.)</p>' +
+    '<p style="color:var(--muted); margin-top:10px;">Al usar Abstracta aceptas estas condiciones. Los papers son de arXiv y cada uno conserva la licencia que eligió su autor.</p>' +
+    '</div>' });
+}
+document.getElementById('row-privacy').addEventListener('click', openPrivacySheet);
+document.getElementById('btn-login-privacy').addEventListener('click', openPrivacySheet);
+
+// Borra también todo lo guardado en este teléfono y lo deja como recién instalado.
+async function wipeLocalData(){
+  stateSavingDisabled = true;
+  stopChatPolling(); leaveThread();
+  clearIdentity();
+  try{ localStorage.removeItem(STATE_KEY); localStorage.removeItem(SOCIAL_CACHE_KEY); }catch(e){}
+  lsSet('lab_device_id', 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+  try{ if('caches' in window) await caches.delete(PDF_CACHE); }catch(e){}
+}
+document.getElementById('row-delete-account').addEventListener('click', ()=>{
+  const hasServerProfile = hasIdentity();
+  openSheet({
+    title:'Eliminar mi cuenta y mis datos',
+    sub: hasServerProfile
+      ? 'Se borrará para siempre: tu perfil ('+session.handle+')'+(session.email?', tu correo y contraseña':'')+', tus publicaciones, respuestas, «me gusta», mensajes y el respaldo de tu biblioteca. También se borrará todo lo guardado en este teléfono. No se puede deshacer.'
+      : 'Se borrará todo lo guardado en este teléfono (biblioteca, papers y PDF descargados). No se puede deshacer.',
+    bodyHtml:'<input class="share-comment" id="delete-confirm-input" type="text" autocomplete="off" placeholder="Escribe ELIMINAR para confirmar" style="margin-top:0;">',
+    footerText:'Eliminar todo',
+    onConfirm: async ()=>{
+      const typed = (document.getElementById('delete-confirm-input').value || '').trim().toUpperCase();
+      if(typed !== 'ELIMINAR'){ toast('Escribe ELIMINAR para confirmar'); return; }
+      setSheetBusy(true, 'Eliminando…');
+      if(hasServerProfile){
+        try{ await apiDelete('/api/account'); }
+        catch(e){
+          if(e.status !== 404){ setSheetBusy(false); toast(e.message || 'No se pudo eliminar. Revisa tu conexión e intenta de nuevo.'); return; }
+        }
+      }
+      await wipeLocalData();
+      toast('Tu cuenta y tus datos fueron eliminados');
+      setTimeout(()=>location.reload(), 900);
+    }
+  });
+});
 document.getElementById('row-logout').addEventListener('click', async ()=>{
   if(session.email){
     // Con cuenta: se respalda todo y se deja el teléfono limpio (para entrar con otra cuenta o
