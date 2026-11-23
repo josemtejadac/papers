@@ -1,7 +1,7 @@
 // GET  /api/social/posts/:id/reply            -> respuestas de la publicación
 // POST /api/social/posts/:id/reply {deviceId, text} -> agrega una respuesta
 
-import { json, cleanText, getUser, handleOf, safe } from '../../../../_lib/util.js';
+import { json, cleanText, getUser, handleOf, safe, rateLimited, tooMany } from '../../../../_lib/util.js';
 
 async function handleGet({ params, env }){
   const { results } = await env.DB.prepare(
@@ -17,6 +17,7 @@ async function handlePost({ request, params, env }){
   if(!me) return json({ error: 'registro requerido' }, 401);
   const text = cleanText(body.text, 1000);
   if(!text) return json({ error: 'respuesta vacía' }, 400);
+  if(await rateLimited(env, 'reply-min:' + me.public_id, 15, 60)) return tooMany('Estás respondiendo muy seguido. Espera un momento.');
 
   const post = await env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(params.id).first();
   if(!post) return json({ error: 'publicación no encontrada' }, 404);

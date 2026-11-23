@@ -4,7 +4,7 @@
 // solo teléfono a la vez; al entrar desde uno nuevo, la cuenta se "muda" a ese, y el anterior
 // tendrá que volver a entrar para usarla. Devuelve el respaldo de la biblioteca y preferencias.
 
-import { json, handleOf, safe } from '../../_lib/util.js';
+import { json, handleOf, safe, rateLimited, clientIp, tooMany } from '../../_lib/util.js';
 import { verifyPassword, normalizeEmail } from '../../_lib/auth.js';
 
 async function handlePost({ request, env }){
@@ -14,6 +14,9 @@ async function handlePost({ request, env }){
   if(!deviceId) return json({ error: 'deviceId es requerido' }, 400);
 
   const email = normalizeEmail(body.email);
+  // Anti fuerza bruta: máximo 10 intentos por correo y 60 por conexión cada 15 minutos.
+  if(await rateLimited(env, 'login-ip:' + clientIp(request), 60, 900)) return tooMany();
+  if(email && await rateLimited(env, 'login-email:' + email, 10, 900)) return tooMany('Demasiados intentos para este correo. Espera 15 minutos e intenta de nuevo.');
   const account = email ? await env.DB.prepare(
     'SELECT device_id, public_id, name, tag, affiliation, email, pass_hash, backup FROM users WHERE email = ?'
   ).bind(email).first() : null;

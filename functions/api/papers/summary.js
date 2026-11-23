@@ -3,19 +3,20 @@
 // Genera un resumen corto en lenguaje simple de un paper, aparte de su resumen oficial, usando
 // Workers AI. Se cachea en D1 para no repetir el trabajo con la misma persona u otra.
 
-import { json, clean, safe } from '../../_lib/util.js';
+import { json, clean, safe, validArxivId, rateLimited, clientIp, tooMany } from '../../_lib/util.js';
 import { runChat } from '../../_lib/llm.js';
+import { lookupPapers } from '../../_lib/arxivFetch.js';
 
 const LANG_NAMES = { es:'español', en:'inglés', pt:'portugués', fr:'francés' };
 const SUMMARY_TIMEOUT_MS = 9000;
 
-async function handlePost({ request, env }){
+async function handlePost({ request, env, waitUntil }){
   const body = await request.json().catch(() => null);
   if (!body) return json({ error: 'cuerpo inválido' }, 400);
   const id = clean(body.id, 40);
-  const lang = (clean(body.lang, 5) || 'es').toLowerCase();
-  const abstract = typeof body.abstract === 'string' ? body.abstract.slice(0, 2000) : '';
-  if (!id || !abstract) return json({ error: 'id y abstract son requeridos' }, 400);
+  const lang0 = (clean(body.lang, 5) || 'es').toLowerCase();
+  const lang = LANG_NAMES[lang0] ? lang0 : 'es';
+  if (!validArxivId(id)) return json({ error: 'id inválido' }, 400);
 
   if (env.DB) {
     try {
@@ -26,6 +27,15 @@ async function handlePost({ request, env }){
     } catch (e) { /* si falla la lectura de caché, igual intentamos generar el resumen */ }
   }
   if (!env.AI) return json({ summary: null });
+  if (await rateLimited(env, 'summary-ip:' + clientIp(request), 60, 60)) return tooMany();
+
+  // El resumen se genera SIEMPRE a partir del resumen oficial de arXiv que tiene el servidor, nunca
+  // de un texto enviado por el teléfono: si no, alguien podría guardar un "resumen" falso que
+  // después verían todos los que abren ese paper.
+  const found = await lookupPapers(env, [id], waitUntil);
+  const paper = found.entries[0];
+  const abstract = paper && paper.abstract ? String(paper.abstract).slice(0, 2000) : '';
+  if (!abstract) return json({ summary: null });
 
   const langName = LANG_NAMES[lang] || LANG_NAMES.es;
   try {

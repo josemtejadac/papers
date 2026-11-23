@@ -3,7 +3,7 @@
 //
 // convId: "general" (sala pública, la ve todo el mundo) o "dm:<publicIdA>|<publicIdB>" (solo esas dos personas).
 
-import { json, cleanText, getUser, dmMembers, handleOf, safe } from '../../_lib/util.js';
+import { json, cleanText, getUser, dmMembers, handleOf, safe, validArxivId, rateLimited, tooMany } from '../../_lib/util.js';
 
 function canAccess(convId, me){
   if(convId === 'general') return true;
@@ -48,8 +48,10 @@ async function handlePost({ request, env }){
   if(!canAccess(convId, me)) return json({ error: 'sin acceso' }, 403);
 
   const text = cleanText(body.text, 1000);
-  const paperId = body.paperId ? String(body.paperId).slice(0, 20) : null;
+  const paperId = body.paperId ? String(body.paperId).slice(0, 30) : null;
+  if(paperId && !validArxivId(paperId)) return json({ error: 'paper inválido' }, 400);
   if(!text && !paperId) return json({ error: 'mensaje vacío' }, 400);
+  if(await rateLimited(env, 'msg-min:' + me.public_id, 30, 60)) return tooMany('Estás enviando mensajes muy seguido. Espera un momento.');
 
   const id = 'm' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   const createdAt = new Date().toISOString();

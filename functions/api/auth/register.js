@@ -4,7 +4,7 @@
 // publicaciones) con un correo y una contraseña, para poder entrar desde otro teléfono.
 // No se envía ningún correo de confirmación: el correo solo sirve como usuario para entrar.
 
-import { json, getUser, safe } from '../../_lib/util.js';
+import { json, getUser, safe, rateLimited, clientIp, tooMany } from '../../_lib/util.js';
 import { hashPassword, normalizeEmail, validPassword } from '../../_lib/auth.js';
 
 async function handlePost({ request, env }){
@@ -13,6 +13,7 @@ async function handlePost({ request, env }){
   const me = await getUser(env, body.deviceId);
   if(!me) return json({ error: 'Primero elige tu nombre en la app.' }, 401);
 
+  if(await rateLimited(env, 'register-ip:' + clientIp(request), 30, 3600)) return tooMany();
   const email = normalizeEmail(body.email);
   if(!email) return json({ error: 'Ese correo no parece válido.' }, 400);
   if(!validPassword(body.password)) return json({ error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);

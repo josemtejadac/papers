@@ -22,7 +22,9 @@ const MAX_RESULTS = 15;
 
 async function handleGet({ request, env, waitUntil }){
   const url = new URL(request.url);
-  const lang = (clean(url.searchParams.get('lang'), 5) || 'es').toLowerCase();
+  // Solo idiomas conocidos (evita llenar la caché con claves inventadas).
+  const lang0 = (clean(url.searchParams.get('lang'), 5) || 'es').toLowerCase();
+  const lang = ['es', 'en', 'pt', 'fr'].includes(lang0) ? lang0 : 'es';
   const max = Math.min(Math.max(parseInt(url.searchParams.get('max') || '8', 10) || 8, 1), MAX_RESULTS);
   const start = Math.max(parseInt(url.searchParams.get('start') || '0', 10) || 0, 0);
 

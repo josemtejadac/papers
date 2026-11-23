@@ -1,7 +1,7 @@
 // GET  /api/users?q=texto      -> directorio público. q busca por nombre, afiliación o código ("Jose#48" / "#4821").
 // POST /api/users {deviceId, name, affiliation} -> registra o actualiza el nombre; asigna un código único (Nombre#1234)
 
-import { json, clean, handleOf, safe } from '../_lib/util.js';
+import { json, clean, validDeviceId, rateLimited, clientIp, tooMany, handleOf, safe } from '../_lib/util.js';
 
 function likeEscape(s){ return s.replace(/[\\%_]/g, '\\$&'); }
 
@@ -50,6 +50,11 @@ async function handlePost({ request, env }){
   if(!deviceId || !name) return json({ error: 'deviceId y name son requeridos' }, 400);
 
   const existing = await env.DB.prepare('SELECT public_id, name, tag FROM users WHERE device_id = ?').bind(deviceId).first();
+  if(!existing){
+    // Perfil nuevo: id con formato válido y un tope de perfiles nuevos por conexión (anti bots).
+    if(!validDeviceId(deviceId)) return json({ error: 'identificador inválido' }, 400);
+    if(await rateLimited(env, 'newuser-ip:' + clientIp(request), 60, 3600)) return tooMany('Se crearon demasiados perfiles desde esta conexión. Intenta más tarde.');
+  }
   const publicId = existing ? existing.public_id : 'p_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
   // Si el nombre no cambió, conserva el mismo código; si cambió, se asigna uno nuevo libre para ese nombre.
   let tag = existing && existing.name.toLowerCase() === name.toLowerCase() ? existing.tag : null;

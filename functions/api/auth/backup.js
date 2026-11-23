@@ -4,7 +4,7 @@
 // Solo para perfiles con cuenta (correo + contraseña): es lo que se recupera al entrar desde
 // otro teléfono. Los PDF descargados no viajan (viven en la memoria de cada teléfono).
 
-import { json, safe } from '../../_lib/util.js';
+import { json, safe, rateLimited, tooMany } from '../../_lib/util.js';
 
 const MAX_BACKUP_CHARS = 1000000;
 
@@ -14,6 +14,7 @@ async function handlePost({ request, env }){
   const row = await env.DB.prepare('SELECT email FROM users WHERE device_id = ?').bind(body.deviceId).first();
   if(!row) return json({ error: 'registro requerido' }, 401);
   if(!row.email) return json({ error: 'Crea una cuenta para respaldar tus datos.' }, 403);
+  if(await rateLimited(env, 'backup:' + body.deviceId, 30, 60)) return tooMany();
 
   if(!body.data || typeof body.data !== 'object') return json({ error: 'respaldo inválido' }, 400);
   const serialized = JSON.stringify(body.data);

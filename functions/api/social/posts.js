@@ -3,7 +3,7 @@
 //
 // Requiere un binding D1 llamado DB (Settings -> Bindings). Ver SETUP-SOCIAL-DB.md.
 
-import { json, cleanText, getUser, handleOf, safe } from '../../_lib/util.js';
+import { json, cleanText, getUser, handleOf, safe, validArxivId, rateLimited, tooMany } from '../../_lib/util.js';
 
 function mapRow(row, likedIds, mePublicId){
   return {
@@ -49,9 +49,13 @@ async function handlePost({ request, env }){
   if(!me) return json({ error: 'registro requerido' }, 401);
 
   const text = cleanText(body.text, 2000);
-  const paperId = body.paperId ? String(body.paperId).slice(0, 20) : null;
+  const paperId = body.paperId ? String(body.paperId).slice(0, 30) : null;
+  if(paperId && !validArxivId(paperId)) return json({ error: 'paper inválido' }, 400);
   const quotedPostId = body.quotedPostId ? String(body.quotedPostId).slice(0, 40) : null;
   if(!text && !paperId) return json({ error: 'publicación vacía' }, 400);
+  if(quotedPostId && !(await env.DB.prepare('SELECT 1 FROM posts WHERE id = ?').bind(quotedPostId).first())) return json({ error: 'la publicación citada ya no existe' }, 404);
+  // Anti spam: máximo 8 publicaciones por minuto y 60 por día por persona.
+  if(await rateLimited(env, 'post-min:' + me.public_id, 8, 60) || await rateLimited(env, 'post-day:' + me.public_id, 60, 86400)) return tooMany('Estás publicando muy seguido. Espera un momento.');
 
   const id = 's' + crypto.randomUUID().replace(/-/g, '').slice(0, 14);
   const createdAt = new Date().toISOString();

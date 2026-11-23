@@ -725,15 +725,24 @@ function toast(msg){
 /* ================= IDENTIDAD + API ================= */
 // Cada navegador tiene un deviceId secreto (localStorage). El servidor le asigna un publicId,
 // que es lo único que otras personas ven (para chats directos). El nombre lo elige cada quien.
+// Enlace a arXiv armado solo desde el id (nunca se usa tal cual una URL guardada en el teléfono).
+function safeArxivUrl(p){ return 'https://arxiv.org/abs/' + encodeURIComponent(String((p && p.id) || '')).replace(/%2F/gi, '/'); }
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+// Identificador secreto de este teléfono: 128 bits aleatorios de calidad criptográfica.
+function newDeviceId(){
+  try{
+    const b = new Uint8Array(16); crypto.getRandomValues(b);
+    return 'd_' + Array.from(b, x=>x.toString(16).padStart(2,'0')).join('');
+  }catch(e){ return 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2); }
+}
 function getDeviceId(){
   let id = lsGet('lab_device_id');
   if(!id){
-    id = 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    id = newDeviceId();
     lsSet('lab_device_id', id);
     if(lsGet('lab_device_id') !== id){
       // Storage bloqueado (navegación privada): id efímero solo para esta carga de página.
@@ -1282,9 +1291,9 @@ document.getElementById('deck-next').innerHTML = icon('next');
 function folderRowsHtml(paperId, forHome){
   return folders.map(f=>{
     const active = userState[paperId] && userState[paperId].folders.has(f.id);
-    return `<div class="pick-row folder ${active?'selected':''}" data-folder="${f.id}">
+    return `<div class="pick-row folder ${active?'selected':''}" data-folder="${esc(f.id)}">
       <div class="ico">${icon('folder')}</div>
-      <div class="info"><div class="n">${f.name}</div></div>
+      <div class="info"><div class="n">${esc(f.name)}</div></div>
       <div class="check">${icon('check')}</div>
     </div>`;
   }).join('') + `<div class="pick-row" id="add-folder-row"><div class="ico">${icon('plus')}</div><div class="info"><div class="n">Crear nueva carpeta</div></div></div>`;
@@ -1502,7 +1511,7 @@ function postCardHtml(post){
     ${post.text ? `<div class="post-text">${esc(post.text)}</div>` : ''}
     ${post.editedAt ? `<div class="post-edited">editado</div>` : ''}
     ${quotedHtml}
-    ${paper? `<div class="post-paper" data-pid="${paper.id}"><div class="pp-label">${esc(paper.section)}</div><h4>${esc(paper.title)}</h4><div class="pp-meta">${esc(paper.authors)}</div></div>` : ''}
+    ${paper? `<div class="post-paper" data-pid="${esc(paper.id)}"><div class="pp-label">${esc(paper.section)}</div><h4>${esc(paper.title)}</h4><div class="pp-meta">${esc(paper.authors)}</div></div>` : ''}
     <div class="post-actions">
       <button class="post-act like ${post.likedByMe?'active':''}" data-act="like">${icon('heart')}<span>${post.likes}</span></button>
       <button class="post-act" data-act="reply">${icon('reply')}<span>${post.replies}</span></button>
@@ -1735,7 +1744,7 @@ function openDMInbox(){
     body.innerHTML = chatState.inbox.map(c=>{
       const isGeneral = c.kind==='general';
       const title = isGeneral ? 'Sala pública · Chile' : c.peer.handle;
-      return `<div class="pick-row" data-conv="${esc(c.convId)}" data-title="${esc(title)}" data-kind="${c.kind}">
+      return `<div class="pick-row" data-conv="${esc(c.convId)}" data-title="${esc(title)}" data-kind="${esc(c.kind)}">
         <div class="avatar ${isGeneral?'group':''}">${isGeneral?'CL':esc(initials(c.peer.name)||'?')}</div>
         <div class="info"><div class="n">${esc(title)}</div><div class="s">${previewOf(c.last, c.kind)}</div></div>
         ${c.unread>0? `<div class="unread-badge">${c.unread}</div>`:''}
@@ -1900,7 +1909,7 @@ let libFilter = 'all';
 function renderFolderTabs(){
   const tabs = document.getElementById('folder-tabs');
   const items = [{id:'all', name:'Todo'}].concat(folders);
-  tabs.innerHTML = items.map(f=>`<button class="folder-chip ${libFilter===f.id?'active':''}" data-f="${f.id}">${f.name}</button>`).join('')
+  tabs.innerHTML = items.map(f=>`<button class="folder-chip ${libFilter===f.id?'active':''}" data-f="${esc(f.id)}">${esc(f.name)}</button>`).join('')
     + `<button class="folder-chip add" data-f="__add">${icon('plus')} Nueva</button>`;
   tabs.querySelectorAll('.folder-chip').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1932,9 +1941,9 @@ function renderLibrary(){
   }
   list.innerHTML = `<div class="list">`+items.map(p=>{
     const st = userState[p.id];
-    return `<div class="row-item" data-id="${p.id}">
+    return `<div class="row-item" data-id="${esc(p.id)}">
       <div class="row-thumb">
-        <span class="mono">${p.section.slice(0,3).toUpperCase()}</span>
+        <span class="mono">${esc(String(p.section||"").slice(0,3).toUpperCase())}</span>
         ${st.downloaded? `<div class="offline-badge">${icon('download')}</div>` : ''}
       </div>
       <div class="row-body">
@@ -2041,7 +2050,7 @@ async function wipeLocalData(){
   stopChatPolling(); leaveThread();
   clearIdentity();
   try{ localStorage.removeItem(STATE_KEY); localStorage.removeItem(SOCIAL_CACHE_KEY); }catch(e){}
-  lsSet('lab_device_id', 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+  lsSet('lab_device_id', newDeviceId());
   try{ if('caches' in window) await caches.delete(PDF_CACHE); }catch(e){}
 }
 document.getElementById('row-delete-account').addEventListener('click', ()=>{
@@ -2080,7 +2089,7 @@ document.getElementById('row-logout').addEventListener('click', async ()=>{
     stateSavingDisabled = true;
     clearIdentity();
     try{ localStorage.removeItem(STATE_KEY); localStorage.removeItem(SOCIAL_CACHE_KEY); }catch(e){}
-    lsSet('lab_device_id', 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+    lsSet('lab_device_id', newDeviceId());
     try{ if('caches' in window) await caches.delete(PDF_CACHE); }catch(e){}
     location.reload();
     return;
@@ -2158,7 +2167,7 @@ function renderReaderBody(){
     <div class="abstract-label">Resumen</div>
     <p>${esc(abstract)}</p>
     <a class="btn-primary pdf-cta" id="pdf-cta" href="/api/pdf?id=${encodeURIComponent(p.id)}" target="_blank" rel="noopener">Abrir el PDF completo</a>
-    <a class="reader-ext-link" href="${p.absUrl}" target="_blank" rel="noopener">Ver la página original en arxiv.org</a>
+    <a class="reader-ext-link" href="${esc(safeArxivUrl(p))}" target="_blank" rel="noopener">Ver la página original en arxiv.org</a>
   `;
   if(st.showOriginal){
     document.getElementById('chip-toggle').addEventListener('click', ()=>{

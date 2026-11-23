@@ -1,13 +1,16 @@
 // POST /api/social/posts/:id/like  { deviceId }
 // Alterna el "me gusta" de ese dispositivo sobre la publicación y devuelve el conteo actualizado.
 
-import { json, safe } from '../../../../_lib/util.js';
+import { json, safe, getUser, rateLimited, tooMany } from '../../../../_lib/util.js';
 
 async function handlePost({ request, env, params }){
   const postId = params.id;
   const body = await request.json().catch(()=>null);
-  const deviceId = body && body.deviceId;
-  if(!deviceId) return json({ error:'deviceId es requerido' }, 400);
+  // Solo personas con perfil pueden dar «me gusta» (evita inflar los contadores con ids inventados).
+  const me = await getUser(env, body && body.deviceId);
+  if(!me) return json({ error:'registro requerido' }, 401);
+  const deviceId = me.device_id;
+  if(await rateLimited(env, 'like-min:' + me.public_id, 60, 60)) return tooMany();
 
   const post = await env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(postId).first();
   if(!post) return json({ error:'publicación no encontrada' }, 404);
