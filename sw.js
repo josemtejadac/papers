@@ -2,9 +2,10 @@
 // No cachea /api/ en general (los datos compartidos siempre vienen de la red), con una
 // excepción: /api/pdf, que sirve el PDF de cada paper por nuestro propio dominio justo para
 // poder guardarlo y volver a mostrarlo sin conexión (ver reader-download en index.html).
-const CACHE = 'lab-papers-v3';
+const CACHE = 'lab-papers-v4';
 const PDF_CACHE = 'lab-papers-pdfs-v1';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png',
+  '/vendor/katex/katex.min.js', '/vendor/katex/katex.min.css', '/vendor/katex/contrib/auto-render.min.js'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

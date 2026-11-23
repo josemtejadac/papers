@@ -1127,6 +1127,45 @@ function triggerIdleNudge(){
     resetIdleNudge();
   });
 }
+/* ================= FÓRMULAS (LaTeX de arXiv) ================= */
+// Los resúmenes de arXiv traen fórmulas en LaTeX ($\alpha\in(1,2)$, $\widehat{\theta}$…). Se dibujan con
+// KaTeX, incluido en /vendor/katex (sin depender de internet: el service worker lo guarda).
+// Solo se carga la primera vez que aparece una fórmula, así no pesa en el arranque.
+let katexPromise = null;
+function loadKatex(){
+  if(window.renderMathInElement) return Promise.resolve();
+  if(katexPromise) return katexPromise;
+  katexPromise = new Promise((resolve, reject)=>{
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/katex/katex.min.css';
+    document.head.appendChild(css);
+    const core = document.createElement('script'); core.src = '/vendor/katex/katex.min.js';
+    core.onload = ()=>{
+      const auto = document.createElement('script'); auto.src = '/vendor/katex/contrib/auto-render.min.js';
+      auto.onload = resolve; auto.onerror = reject; document.head.appendChild(auto);
+    };
+    core.onerror = reject; document.head.appendChild(core);
+  }).catch(e=>{ katexPromise = null; throw e; });
+  return katexPromise;
+}
+const MATH_HINT = /\$[^$\n]+\$|\\\(|\\\[/;
+function typesetMath(root){
+  if(!root || !MATH_HINT.test(root.textContent || '')) return;
+  loadKatex().then(()=>{
+    try{
+      window.renderMathInElement(root, {
+        delimiters: [
+          { left:'$$', right:'$$', display:true }, { left:'$', right:'$', display:false },
+          { left:'\\(', right:'\\)', display:false }, { left:'\\[', right:'\\]', display:true }
+        ],
+        // Si una fórmula viene mal escrita, se deja el texto tal cual (sin pintarlo de rojo).
+        throwOnError:false, strict:false, errorColor:'currentColor',
+        // Arreglos de fórmulas que llegan dañadas por traducciones antiguas: "\widehatθ" -> "\widehat{θ}".
+        preProcess: math => math.replace(/\\(widehat|widetilde|hat|tilde|bar|vec|dot|ddot|overline|mathbf|mathcal|mathbb|bm)(?![a-zA-Z{\s\\])(.)/g, '\\$1{$2}'),
+        ignoredTags:['script','noscript','style','textarea','pre','code','input','button','option']
+      });
+    }catch(e){ /* sin fórmulas dibujadas, el texto sigue legible */ }
+  }).catch(()=>{});
+}
 function renderDeck(){
   const deck = document.getElementById('deck');
   const nav = document.getElementById('deck-nav');
@@ -1182,6 +1221,7 @@ function renderDeck(){
   document.getElementById('deck-counter').textContent = papers.length ? `${deckIndex+1} / ${papers.length}` : '0 / 0';
   document.getElementById('deck-prev').disabled = deckIndex===0;
   document.getElementById('deck-next').disabled = deckIndex>=papers.length-1;
+  typesetMath(deck);
 }
 function wireCardGestures(card){
   let startX=0, startY=0, dx=0, dragging=false, decided=false, horizontal=false;
@@ -1499,6 +1539,7 @@ function renderSocialFeed(){
       : '') + socialPosts.map(postCardHtml).join('');
   bindSocialRetry(wrap);
   wrap.scrollTop = top;
+  typesetMath(wrap);
   wrap.querySelectorAll('.post-paper').forEach(el=> el.addEventListener('click', ()=> openReader(el.dataset.pid)));
   wrap.querySelectorAll('.post-card').forEach(card=>{
     const id = card.dataset.id;
@@ -1903,6 +1944,7 @@ function renderLibrary(){
     </div>`;
   }).join('')+`</div>`;
   list.querySelectorAll('.row-item').forEach(row=> row.addEventListener('click', ()=> openReader(row.dataset.id)));
+  typesetMath(list);
 }
 
 /* ================= PROFILE ================= */
@@ -2142,6 +2184,7 @@ function renderReaderBody(){
       toast('Sin conexión. Este PDF no está descargado en el teléfono.');
     }
   });
+  typesetMath(body);
   loadQuickSummary(p);
 }
 const quickSummaryCache = {};
