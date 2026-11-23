@@ -1,75 +1,98 @@
-// GET /api/papers?q=texto&category=cs.AI,q-bio.NC&ids=2310.12345,2401.00001&lang=es&start=0&max=10
+// GET /api/papers?q=texto&category=cs.AI,q-bio.NC&from=2024-01-01&to=2024-12-31&lang=es&start=0&max=8
+// GET /api/papers?ids=2310.12345,2401.00001&lang=es
 //
-// Busca papers reales en arXiv (http://export.arxiv.org/api) y, si hay un binding de Workers AI
+// Busca papers reales en arXiv (https://export.arxiv.org/api) y, si hay un binding de Workers AI
 // (env.AI), traduce título y resumen al idioma pedido (cacheado en D1 para no re-traducir).
+// Las respuestas de arXiv también se guardan en D1 (ver _lib/arxivFetch.js): si arXiv falla o
+// limita las consultas, se sirven los resultados guardados en vez de un error.
 //
 // "Gracias a arXiv por el uso de su interoperabilidad de acceso abierto."
 // Requerido por los términos de uso de la API de arXiv: https://info.arxiv.org/help/api/tou.html
 
-import { json, clean } from '../_lib/util.js';
+import { json, clean, safe } from '../_lib/util.js';
 import { parseArxivFeed, translateEntries, translateQueryToEnglish } from '../_lib/arxiv.js';
+import {
+  fetchArxivXml, getCachedPapers, saveCachedPapers, getCachedQuery, saveCachedQuery,
+  lookupPapers, isFresh, QUERY_FRESH_MS
+} from '../_lib/arxivFetch.js';
 
 const MAX_RESULTS = 15;
 
-export async function onRequestGet({ request, env, waitUntil }){
+async function handleGet({ request, env, waitUntil }){
   const url = new URL(request.url);
   const lang = (clean(url.searchParams.get('lang'), 5) || 'es').toLowerCase();
   const max = Math.min(Math.max(parseInt(url.searchParams.get('max') || '8', 10) || 8, 1), MAX_RESULTS);
   const start = Math.max(parseInt(url.searchParams.get('start') || '0', 10) || 0, 0);
 
+  let entries;
+  let stale = false;
+
   const idsParam = clean(url.searchParams.get('ids'), 300);
-  let searchQuery, idList;
   if (idsParam) {
-    idList = idsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, MAX_RESULTS);
+    const idList = idsParam.split(',').map(s => s.trim()).filter(Boolean).slice(0, MAX_RESULTS);
     if (!idList.length) return json({ papers: [] });
+    const result = await lookupPapers(env, idList, waitUntil);
+    if (!result.entries.length && result.failed) return json({ error: 'no se pudo contactar a arXiv' }, 502);
+    entries = result.entries;
+    stale = result.failed;
   } else {
     const qRaw = clean(url.searchParams.get('q'), 200);
-    // arXiv es casi todo en inglés: una búsqueda en español no encuentra nada aunque el tema sí
-    // esté cubierto. Se traduce el término al inglés antes de mandarlo (si hay IA disponible).
-    const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : qRaw;
     const categories = clean(url.searchParams.get('category'), 200)
-      .split(',').map(s => s.trim()).filter(Boolean);
+      .split(',').map(s => s.trim()).filter(Boolean).sort();
     const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('from') || '') ? url.searchParams.get('from') : '';
     const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('to') || '') ? url.searchParams.get('to') : '';
-    const parts = [];
-    if (categories.length) parts.push('(' + categories.map(c => 'cat:' + c).join(' OR ') + ')');
-    if (q) parts.push('all:' + q.replace(/[()]/g, ' '));
-    if (from || to) {
-      const d0 = (from || '1991-01-01').replace(/-/g, '') + '0000';
-      const d1 = (to || '2100-01-01').replace(/-/g, '') + '2359';
-      parts.push(`submittedDate:[${d0} TO ${d1}]`);
+
+    // La clave usa la búsqueda tal como la escribió la persona: si ya se buscó antes, ni siquiera
+    // hace falta volver a traducir el término ni consultar arXiv.
+    const queryKey = JSON.stringify({ q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
+    const cachedQuery = await getCachedQuery(env, queryKey);
+
+    if (cachedQuery && isFresh(cachedQuery.fetchedAt, QUERY_FRESH_MS)) {
+      const known = await getCachedPapers(env, cachedQuery.ids);
+      const fromCache = cachedQuery.ids.map(id => known.get(id)).filter(Boolean);
+      if (fromCache.length === cachedQuery.ids.length) entries = fromCache;
     }
-    if (!parts.length) parts.push('cat:cs.AI');
-    searchQuery = parts.join(' AND ');
-  }
 
-  const apiUrl = new URL('https://export.arxiv.org/api/query');
-  if (idList) {
-    apiUrl.searchParams.set('id_list', idList.join(','));
-  } else {
-    apiUrl.searchParams.set('search_query', searchQuery);
-    apiUrl.searchParams.set('sortBy', 'submittedDate');
-    apiUrl.searchParams.set('sortOrder', 'descending');
-  }
-  apiUrl.searchParams.set('start', String(start));
-  apiUrl.searchParams.set('max_results', String(max));
+    if (!entries) {
+      try {
+        // arXiv es casi todo en inglés: una búsqueda en español no encuentra nada aunque el tema
+        // sí esté cubierto. Se traduce el término al inglés antes de mandarlo (si hay IA).
+        const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : '';
+        const parts = [];
+        if (categories.length) parts.push('(' + categories.map(c => 'cat:' + c).join(' OR ') + ')');
+        if (q) parts.push('all:' + q.replace(/[()"]/g, ' '));
+        if (from || to) {
+          const d0 = (from || '1991-01-01').replace(/-/g, '') + '0000';
+          const d1 = (to || '2100-01-01').replace(/-/g, '') + '2359';
+          parts.push(`submittedDate:[${d0} TO ${d1}]`);
+        }
+        if (!parts.length) parts.push('cat:cs.AI');
 
-  let xml;
-  try {
-    const res = await fetch(apiUrl.toString(), { headers: { 'User-Agent': 'Abstracta/1.0 (papers app; Cloudflare Pages)' } });
-    if (!res.ok) return json({ error: 'arXiv respondió con un error' }, 502);
-    xml = await res.text();
-  } catch (e) {
-    return json({ error: 'no se pudo contactar a arXiv' }, 502);
-  }
+        const apiUrl = new URL('https://export.arxiv.org/api/query');
+        apiUrl.searchParams.set('search_query', parts.join(' AND '));
+        apiUrl.searchParams.set('sortBy', 'submittedDate');
+        apiUrl.searchParams.set('sortOrder', 'descending');
+        apiUrl.searchParams.set('start', String(start));
+        apiUrl.searchParams.set('max_results', String(max));
 
-  let entries;
-  try {
-    entries = parseArxivFeed(xml);
-  } catch (e) {
-    return json({ error: 'no se pudo leer la respuesta de arXiv' }, 502);
+        entries = parseArxivFeed(await fetchArxivXml(apiUrl.toString()));
+        saveCachedPapers(env, entries, waitUntil);
+        saveCachedQuery(env, queryKey, entries.map(e => e.id), waitUntil);
+      } catch (e) {
+        // arXiv no respondió (o limitó): si esta búsqueda ya se había hecho antes, se muestra lo
+        // guardado aunque sea de hace más tiempo, en vez de dejar a la persona sin nada.
+        if (cachedQuery) {
+          const known = await getCachedPapers(env, cachedQuery.ids);
+          const fromCache = cachedQuery.ids.map(id => known.get(id)).filter(Boolean);
+          if (fromCache.length) { entries = fromCache; stale = true; }
+        }
+        if (!entries) return json({ error: 'arXiv no está respondiendo en este momento. Intenta de nuevo en un rato.' }, 502);
+      }
+    }
   }
 
   const withLang = await translateEntries(env, entries, lang === 'en' ? 'en' : lang, waitUntil);
-  return json({ papers: withLang, count: withLang.length, lang });
+  return json({ papers: withLang, count: withLang.length, lang, stale });
 }
+
+export const onRequestGet = safe(handleGet);

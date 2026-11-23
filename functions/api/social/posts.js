@@ -3,7 +3,7 @@
 //
 // Requiere un binding D1 llamado DB (Settings -> Bindings). Ver SETUP-SOCIAL-DB.md.
 
-import { json, cleanText, getUser, handleOf } from '../../_lib/util.js';
+import { json, cleanText, getUser, handleOf, safe } from '../../_lib/util.js';
 
 function mapRow(row, likedIds, mePublicId){
   return {
@@ -23,7 +23,7 @@ function mapRow(row, likedIds, mePublicId){
   };
 }
 
-export async function onRequestGet({ request, env }){
+async function handleGet({ request, env }){
   const device = new URL(request.url).searchParams.get('device') || '';
   const me = device ? await getUser(env, device) : null;
 
@@ -42,7 +42,7 @@ export async function onRequestGet({ request, env }){
   return json({ posts: results.map(r => mapRow(r, likedIds, me && me.public_id)) });
 }
 
-export async function onRequestPost({ request, env }){
+async function handlePost({ request, env }){
   const body = await request.json().catch(() => null);
   if(!body) return json({ error: 'cuerpo inválido' }, 400);
   const me = await getUser(env, body.deviceId);
@@ -66,3 +66,6 @@ export async function onRequestPost({ request, env }){
   const row = await env.DB.prepare('SELECT * FROM posts WHERE id = ?').bind(id).first();
   return json({ post: mapRow(row, new Set(), me.public_id) }, 201);
 }
+
+export const onRequestGet = safe(handleGet);
+export const onRequestPost = safe(handlePost);

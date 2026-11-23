@@ -1,7 +1,7 @@
 // GET  /api/users?q=texto      -> directorio público. q busca por nombre, afiliación o código ("Jose#48" / "#4821").
 // POST /api/users {deviceId, name, affiliation} -> registra o actualiza el nombre; asigna un código único (Nombre#1234)
 
-import { json, clean, handleOf } from '../_lib/util.js';
+import { json, clean, handleOf, safe } from '../_lib/util.js';
 
 function likeEscape(s){ return s.replace(/[\\%_]/g, '\\$&'); }
 
@@ -9,7 +9,7 @@ function mapUser(r){
   return { publicId: r.public_id, name: r.name, tag: r.tag, handle: handleOf(r), affiliation: r.affiliation };
 }
 
-export async function onRequestGet({ request, env }){
+async function handleGet({ request, env }){
   const raw = clean(new URL(request.url).searchParams.get('q'), 50).toLowerCase();
   let stmt;
   if(!raw){
@@ -42,7 +42,7 @@ function randomTag(width){
   return String(min + Math.floor(Math.random() * span));
 }
 
-export async function onRequestPost({ request, env }){
+async function handlePost({ request, env }){
   const body = await request.json().catch(() => null);
   const deviceId = body && clean(body.deviceId, 80);
   const name = body && clean(body.name, 40).replace(/#/g, '');
@@ -75,3 +75,6 @@ export async function onRequestPost({ request, env }){
   }
   return json({ error: 'no se pudo asignar un código, intenta con otro nombre' }, 500);
 }
+
+export const onRequestGet = safe(handleGet);
+export const onRequestPost = safe(handlePost);

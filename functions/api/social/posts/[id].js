@@ -1,9 +1,9 @@
 // PATCH  /api/social/posts/:id {deviceId, text}  -> edita el texto de tu propia publicación
 // DELETE /api/social/posts/:id {deviceId}         -> elimina tu propia publicación
 
-import { json, cleanText, getUser } from '../../../_lib/util.js';
+import { json, cleanText, getUser, safe } from '../../../_lib/util.js';
 
-export async function onRequestPatch({ request, params, env }){
+async function handlePatch({ request, params, env }){
   const body = await request.json().catch(() => null);
   if(!body) return json({ error: 'cuerpo inválido' }, 400);
   const me = await getUser(env, body.deviceId);
@@ -21,7 +21,7 @@ export async function onRequestPatch({ request, params, env }){
   return json({ text, editedAt });
 }
 
-export async function onRequestDelete({ request, params, env }){
+async function handleDelete({ request, params, env }){
   const body = await request.json().catch(() => ({}));
   const me = await getUser(env, body.deviceId);
   if(!me) return json({ error: 'registro requerido' }, 401);
@@ -35,3 +35,6 @@ export async function onRequestDelete({ request, params, env }){
   await env.DB.prepare('DELETE FROM post_likes WHERE post_id = ?').bind(params.id).run();
   return json({ deleted: true });
 }
+
+export const onRequestPatch = safe(handlePatch);
+export const onRequestDelete = safe(handleDelete);

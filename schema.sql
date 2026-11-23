@@ -86,3 +86,10 @@ CREATE TABLE IF NOT EXISTS paper_summaries (
   created_at TEXT NOT NULL,
   PRIMARY KEY (arxiv_id, lang)
 );
+CREATE TABLE IF NOT EXISTS arxiv_papers (id TEXT PRIMARY KEY, data TEXT NOT NULL, fetched_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS arxiv_queries (query_key TEXT PRIMARY KEY, ids TEXT NOT NULL, fetched_at TEXT NOT NULL);
+ALTER TABLE users ADD COLUMN email TEXT;
+ALTER TABLE users ADD COLUMN pass_hash TEXT;
+ALTER TABLE users ADD COLUMN backup TEXT;
+ALTER TABLE users ADD COLUMN backup_at TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email);

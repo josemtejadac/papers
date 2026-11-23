@@ -168,11 +168,15 @@ export async function translateEntries(env, entries, lang, waitUntil){
 
   let cached = new Map();
   if (hasDB && entries.length) {
-    const ids = entries.map(e => e.id);
-    const { results } = await env.DB.prepare(
-      `SELECT arxiv_id, title, abstract FROM paper_translations WHERE lang = ? AND arxiv_id IN (${ids.map(() => '?').join(',')})`
-    ).bind(lang, ...ids).all();
-    results.forEach(r => cached.set(r.arxiv_id, r));
+    try {
+      const ids = entries.map(e => e.id);
+      const { results } = await env.DB.prepare(
+        `SELECT arxiv_id, title, abstract FROM paper_translations WHERE lang = ? AND arxiv_id IN (${ids.map(() => '?').join(',')})`
+      ).bind(lang, ...ids).all();
+      results.forEach(r => cached.set(r.arxiv_id, r));
+    } catch (e) {
+      // Si la caché de D1 falla, no por eso se pierde la búsqueda: se sigue sin caché para esta vez.
+    }
   }
 
   return Promise.all(entries.map(async (e) => {

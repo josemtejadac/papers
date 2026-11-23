@@ -3,7 +3,7 @@
 // Genera un resumen corto en lenguaje simple de un paper, aparte de su resumen oficial, usando
 // Workers AI. Se cachea en D1 para no repetir el trabajo con la misma persona u otra.
 
-import { json, clean } from '../../_lib/util.js';
+import { json, clean, safe } from '../../_lib/util.js';
 
 const LANG_NAMES = { es:'español', en:'inglés', pt:'portugués', fr:'francés' };
 const SUMMARY_TIMEOUT_MS = 6000;
@@ -15,7 +15,7 @@ function withTimeout(promise, ms){
   ]);
 }
 
-export async function onRequestPost({ request, env }){
+async function handlePost({ request, env }){
   const body = await request.json().catch(() => null);
   if (!body) return json({ error: 'cuerpo inválido' }, 400);
   const id = clean(body.id, 40);
@@ -24,10 +24,12 @@ export async function onRequestPost({ request, env }){
   if (!id || !abstract) return json({ error: 'id y abstract son requeridos' }, 400);
 
   if (env.DB) {
-    const row = await env.DB.prepare(
-      'SELECT summary FROM paper_summaries WHERE arxiv_id = ? AND lang = ?'
-    ).bind(id, lang).first();
-    if (row && row.summary) return json({ summary: row.summary, cached: true });
+    try {
+      const row = await env.DB.prepare(
+        'SELECT summary FROM paper_summaries WHERE arxiv_id = ? AND lang = ?'
+      ).bind(id, lang).first();
+      if (row && row.summary) return json({ summary: row.summary, cached: true });
+    } catch (e) { /* si falla la lectura de caché, igual intentamos generar el resumen */ }
   }
   if (!env.AI) return json({ summary: null });
 
@@ -51,3 +53,5 @@ export async function onRequestPost({ request, env }){
     return json({ summary: null });
   }
 }
+
+export const onRequestPost = safe(handlePost);

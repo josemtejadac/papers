@@ -3,7 +3,7 @@
 //
 // convId: "general" (sala pública, la ve todo el mundo) o "dm:<publicIdA>|<publicIdB>" (solo esas dos personas).
 
-import { json, cleanText, getUser, dmMembers, handleOf } from '../../_lib/util.js';
+import { json, cleanText, getUser, dmMembers, handleOf, safe } from '../../_lib/util.js';
 
 function canAccess(convId, me){
   if(convId === 'general') return true;
@@ -15,7 +15,7 @@ function mapRow(r){
   return { seq: r.seq, id: r.id, senderId: r.sender_id, senderName: r.sender_name, text: r.text, paperId: r.paper_id, createdAt: r.created_at };
 }
 
-export async function onRequestGet({ request, env }){
+async function handleGet({ request, env }){
   const url = new URL(request.url);
   const convId = url.searchParams.get('conv') || '';
   const after = parseInt(url.searchParams.get('after') || '0', 10) || 0;
@@ -39,7 +39,7 @@ export async function onRequestGet({ request, env }){
   return json({ messages: results.map(mapRow) });
 }
 
-export async function onRequestPost({ request, env }){
+async function handlePost({ request, env }){
   const body = await request.json().catch(() => null);
   if(!body) return json({ error: 'cuerpo inválido' }, 400);
   const me = await getUser(env, body.deviceId);
@@ -66,3 +66,6 @@ export async function onRequestPost({ request, env }){
   }
   return json({ message: mapRow(row) }, 201);
 }
+
+export const onRequestGet = safe(handleGet);
+export const onRequestPost = safe(handlePost);

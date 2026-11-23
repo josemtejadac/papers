@@ -7,6 +7,19 @@ export function json(data, status){
   });
 }
 
+// Envuelve un handler de Pages Function para que, pase lo que pase adentro (D1 caído, un bug, lo
+// que sea), SIEMPRE devuelva un JSON prolijo en vez de la página de error genérica de Cloudflare.
+// El cliente (función api() de index.html) ya sabe mostrar un aviso cuando recibe un error así.
+export function safe(handler){
+  return async (ctx) => {
+    try{
+      return await handler(ctx);
+    } catch(e){
+      return json({ error: 'No se pudo completar la solicitud. Intenta de nuevo en un momento.' }, 500);
+    }
+  };
+}
+
 export function clean(value, max){
   return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().slice(0, max);
 }

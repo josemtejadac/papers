@@ -2,9 +2,9 @@
 // Lista las conversaciones de esta persona: la sala pública "general" + sus mensajes directos,
 // con el último mensaje y cuántos mensajes sin leer tiene en cada una.
 
-import { json, getUser, DM_MEMBER_SQL, memberParam, dmMembers, handleOf } from '../../_lib/util.js';
+import { json, getUser, DM_MEMBER_SQL, memberParam, dmMembers, handleOf, safe } from '../../_lib/util.js';
 
-export async function onRequestGet({ request, env }){
+async function handleGet({ request, env }){
   const me = await getUser(env, new URL(request.url).searchParams.get('device'));
   if(!me) return json({ error: 'registro requerido' }, 401);
 
@@ -68,3 +68,5 @@ export async function onRequestGet({ request, env }){
 
   return json({ conversations, unreadTotal });
 }
+
+export const onRequestGet = safe(handleGet);

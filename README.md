@@ -46,3 +46,21 @@ Detalle en [SETUP-SOCIAL-DB.md](SETUP-SOCIAL-DB.md).
   fechas (botón "Filtros" junto al buscador de Home).
 - **Resumen simple con IA**: el lector pide un resumen corto en lenguaje llano del paper, aparte
   del resumen oficial (mismo binding `AI` de la traducción).
+
+## Resistencia a fallas y cuentas (requiere `migration-005.sql`)
+- **Si arXiv falla** (caído o limitando peticiones): el servidor reintenta, guarda en D1 cada
+  búsqueda y cada paper (`arxiv_papers`, `arxiv_queries`) y, si arXiv no responde, entrega lo
+  último guardado. El teléfono además guarda sus últimas 30 búsquedas: sin red se ven igual.
+- **Si la IA falla**: los papers se muestran en inglés y la app sigue funcionando.
+- **Si la base de datos falla**: cada endpoint responde un error claro en JSON (nunca una página
+  rota) y la búsqueda de papers sigue funcionando sin D1.
+- **Sin conexión**: Home, Biblioteca, el último feed de Social, el resumen simple ya generado y
+  los PDF descargados funcionan sin internet. "Descargar" guarda el PDF de verdad en el teléfono
+  (Cache Storage) y avisa si no se pudo.
+- **Cuentas con correo y contraseña** (opcionales, sin correo de confirmación): Perfil → Cuenta.
+  Una cuenta está activa en un teléfono a la vez (como WhatsApp); al entrar desde otro, se muda y
+  se recuperan nombre, código, chats, publicaciones, biblioteca y preferencias. La contraseña se
+  guarda solo como hash PBKDF2. Los PDF descargados no viajan (hay que descargarlos de nuevo).
+- **Activar**: pegar `migration-005.sql` completo en la Console de `lab-papers-db` (una sola vez:
+  si se ejecuta dos veces, la segunda dice "duplicate column", y no pasa nada) y re-desplegar.
+  Mientras no se ejecute, la app funciona igual que antes; solo "Crear cuenta" y "Entrar" darán error.

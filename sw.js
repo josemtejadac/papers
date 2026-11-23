@@ -2,7 +2,7 @@
 // No cachea /api/ en general (los datos compartidos siempre vienen de la red), con una
 // excepción: /api/pdf, que sirve el PDF de cada paper por nuestro propio dominio justo para
 // poder guardarlo y volver a mostrarlo sin conexión (ver reader-download en index.html).
-const CACHE = 'lab-papers-v2';
+const CACHE = 'lab-papers-v3';
 const PDF_CACHE = 'lab-papers-pdfs-v1';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
@@ -23,12 +23,14 @@ self.addEventListener('fetch', event => {
   if(req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if(url.pathname === '/api/pdf'){
-    // Cache-first: una vez descargado un paper, su PDF se sirve del teléfono sin red.
+    // Cache-first: una vez descargado un paper (botón Descargar), su PDF se sirve del teléfono
+    // sin red. Solo la app decide qué se guarda, para no llenar la memoria con PDFs solo vistos.
     event.respondWith(
-      caches.match(req).then(hit => hit || fetch(req).then(res => {
-        if(res.ok){ const copy = res.clone(); caches.open(PDF_CACHE).then(c => c.put(req, copy)); }
-        return res;
-      }))
+      caches.open(PDF_CACHE).then(c => c.match(url.pathname + url.search)).then(hit => hit || fetch(req).catch(() =>
+        new Response('Sin conexión: este PDF no está descargado en el teléfono. Descárgalo con el botón de descarga cuando tengas internet.', {
+          status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' }
+        })
+      ))
     );
     return;
   }
@@ -41,7 +43,7 @@ self.addEventListener('fetch', event => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put('/index.html', copy));
         return res;
-      }).catch(() => caches.match('/index.html'))
+      }).catch(() => caches.match('/index.html').then(hit => hit || Response.error()))
     );
     return;
   }

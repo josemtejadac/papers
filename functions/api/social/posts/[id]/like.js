@@ -1,21 +1,16 @@
 // POST /api/social/posts/:id/like  { deviceId }
 // Alterna el "me gusta" de ese dispositivo sobre la publicación y devuelve el conteo actualizado.
 
-function jsonResponse(data, status){
-  return new Response(JSON.stringify(data), {
-    status: status || 200,
-    headers: { 'content-type': 'application/json; charset=utf-8' }
-  });
-}
+import { json, safe } from '../../../../_lib/util.js';
 
-export async function onRequestPost({ request, env, params }){
+async function handlePost({ request, env, params }){
   const postId = params.id;
   const body = await request.json().catch(()=>null);
   const deviceId = body && body.deviceId;
-  if(!deviceId) return jsonResponse({ error:'deviceId es requerido' }, 400);
+  if(!deviceId) return json({ error:'deviceId es requerido' }, 400);
 
   const post = await env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(postId).first();
-  if(!post) return jsonResponse({ error:'publicación no encontrada' }, 404);
+  if(!post) return json({ error:'publicación no encontrada' }, 404);
 
   const existing = await env.DB.prepare(
     'SELECT 1 FROM post_likes WHERE post_id = ? AND device_id = ?'
@@ -33,5 +28,7 @@ export async function onRequestPost({ request, env, params }){
   }
 
   const row = await env.DB.prepare('SELECT likes FROM posts WHERE id = ?').bind(postId).first();
-  return jsonResponse({ likes: row.likes, likedByMe });
+  return json({ likes: row.likes, likedByMe });
 }
+
+export const onRequestPost = safe(handlePost);

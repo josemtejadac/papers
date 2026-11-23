@@ -1,16 +1,16 @@
 // GET  /api/social/posts/:id/reply            -> respuestas de la publicación
 // POST /api/social/posts/:id/reply {deviceId, text} -> agrega una respuesta
 
-import { json, cleanText, getUser, handleOf } from '../../../../_lib/util.js';
+import { json, cleanText, getUser, handleOf, safe } from '../../../../_lib/util.js';
 
-export async function onRequestGet({ params, env }){
+async function handleGet({ params, env }){
   const { results } = await env.DB.prepare(
     'SELECT id, author_name, author_sub, text, created_at FROM replies WHERE post_id = ? ORDER BY created_at ASC, rowid ASC LIMIT 200'
   ).bind(params.id).all();
   return json({ replies: results.map(r => ({ id: r.id, authorName: r.author_name, authorSub: r.author_sub, text: r.text, createdAt: r.created_at })) });
 }
 
-export async function onRequestPost({ request, params, env }){
+async function handlePost({ request, params, env }){
   const body = await request.json().catch(() => null);
   if(!body) return json({ error: 'cuerpo inválido' }, 400);
   const me = await getUser(env, body.deviceId);
@@ -30,3 +30,6 @@ export async function onRequestPost({ request, params, env }){
   const row = await env.DB.prepare('SELECT replies FROM posts WHERE id = ?').bind(params.id).first();
   return json({ replies: row.replies }, 201);
 }
+
+export const onRequestGet = safe(handleGet);
+export const onRequestPost = safe(handlePost);

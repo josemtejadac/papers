@@ -307,6 +307,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="login-mark">Abstracta</div>
       <div class="login-tag">Descubre, guarda y comparte papers científicos con tu equipo.</div>
       <button class="btn-block primary" id="btn-create-account"></button>
+      <button class="btn-block ghost" id="btn-login-account">Ya tengo cuenta · Entrar</button>
     </div>
   </section>
 
@@ -390,6 +391,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
     <div class="settings-list">
       <div class="setting-row" id="row-name"><div class="label">Nombre</div><div class="value" id="name-value"></div></div>
       <div class="setting-row" id="row-code"><div class="label">Mi código</div><div class="value" id="code-value"></div></div>
+      <div class="setting-row" id="row-account"><div class="label">Cuenta</div><div class="value" id="account-value"></div></div>
       <div class="setting-row" id="row-interests"><div class="label">Intereses</div><div class="value" id="interests-value"></div></div>
       <div class="setting-row" id="row-lang"><div class="label">Preferencias de idioma</div><div class="value" id="lang-value"></div></div>
       <div class="setting-row" id="row-theme"><div class="label">Tema</div><div class="value" id="theme-value"></div></div>
@@ -469,6 +471,7 @@ let papersSeenOrder = [];  // ids en el orden en que se vieron por primera vez (
 const MAX_CACHED_PAPERS = 300; // tope del caché local; los papers guardados en una carpeta no se borran
 let homeLoading = false;
 let homeFailed = false;
+let homeErrorMsg = '';
 let homeQuery = '';        // texto escrito por la persona; vacío = recomendado según sus intereses
 let lastHomeIds = [];      // último deck de Home que cargó bien, para mostrarlo si falla la conexión
 let lastHomeWasSearch = false;
@@ -493,7 +496,9 @@ function ensureUserState(id){
 }
 function mergePapers(list){
   (list || []).forEach(p=>{
-    if(!papersIndex[p.id]) papersSeenOrder.push(p.id);
+    const old = papersIndex[p.id];
+    if(!old) papersSeenOrder.push(p.id);
+    else if(old.quickSummaries && !p.quickSummaries) p.quickSummaries = old.quickSummaries;
     papersIndex[p.id] = p;
     ensureUserState(p.id);
   });
@@ -534,45 +539,82 @@ function offlineFallbackDeck(){
   const cached = lastHomeIds.map(id=>papersIndex[id]).filter(Boolean);
   return cached.length ? cached : null;
 }
+// Caché local de búsquedas: misma búsqueda (texto + filtros + idioma) -> ids de los resultados.
+// Si arXiv o la red fallan, se muestran los resultados que ya se habían cargado en este teléfono.
+let searchCache = {};       // key -> { ids, at }
+const MAX_SEARCH_CACHE = 30;
+function rememberSearch(key, ids){
+  searchCache[key] = { ids: ids.slice(0, 20), at: Date.now() };
+  const keys = Object.keys(searchCache);
+  if(keys.length > MAX_SEARCH_CACHE){
+    keys.sort((a,b)=>searchCache[a].at - searchCache[b].at)
+      .slice(0, keys.length - MAX_SEARCH_CACHE).forEach(k=>delete searchCache[k]);
+  }
+}
+function cachedSearchDeck(key){
+  const hit = searchCache[key];
+  if(!hit) return null;
+  const list = hit.ids.map(id=>papersIndex[id]).filter(Boolean);
+  return list.length ? list : null;
+}
+let homeLoadSeq = 0;
 async function loadHomeDeck(query){
+  const seq = ++homeLoadSeq;
   homeQuery = (query || '').trim();
-  homeLoading = true; homeFailed = false; deckIndex = 0;
+  homeLoading = true; homeFailed = false; homeErrorMsg = ''; deckIndex = 0;
   renderDeck();
   const offline = typeof navigator!=='undefined' && navigator.onLine===false;
   const filterCategory = document.getElementById('home-filter-category').value.trim();
   const filterFrom = document.getElementById('home-filter-from').value;
   const filterTo = document.getElementById('home-filter-to').value;
+  const params = new URLSearchParams();
+  if(homeQuery) params.set('q', homeQuery);
+  if(filterCategory) params.set('category', filterCategory);
+  else if(!homeQuery) params.set('category', defaultArxivCategories().join(','));
+  if(filterFrom) params.set('from', filterFrom);
+  if(filterTo) params.set('to', filterTo);
+  params.set('lang', langCodeFor(profile.translationLanguage));
+  params.set('max', '8');
+  const searchKey = params.toString();
+  let stale = false;
   try{
     if(offline) throw new Error('offline');
-    const params = new URLSearchParams();
-    if(homeQuery) params.set('q', homeQuery);
-    if(filterCategory) params.set('category', filterCategory);
-    else if(!homeQuery) params.set('category', defaultArxivCategories().join(','));
-    if(filterFrom) params.set('from', filterFrom);
-    if(filterTo) params.set('to', filterTo);
-    params.set('lang', langCodeFor(profile.translationLanguage));
-    params.set('max', '8');
-    const data = await api('/api/papers?'+params.toString());
+    const data = await api('/api/papers?'+searchKey);
+    if(seq !== homeLoadSeq) return; // llegó una búsqueda más nueva mientras esta cargaba
     mergePapers(data.papers);
     papers = data.papers.map(p=>papersIndex[p.id]);
-    lastHomeIds = papers.map(p=>p.id);
-    lastHomeWasSearch = !!homeQuery;
+    stale = !!data.stale;
+    if(papers.length){
+      lastHomeIds = papers.map(p=>p.id);
+      lastHomeWasSearch = !!homeQuery;
+      rememberSearch(searchKey, lastHomeIds);
+    }
     saveLocalState();
     homeLoading = false;
     if(!papers.length) homeFailed = 'empty';
   } catch(e){
-    const fallback = (!homeQuery || homeQuery===(lastHomeWasSearch?homeQuery:'')) ? offlineFallbackDeck() : null;
+    if(seq !== homeLoadSeq) return;
+    const fallback = cachedSearchDeck(searchKey)
+      || ((!homeQuery && !lastHomeWasSearch) ? offlineFallbackDeck() : null);
+    homeLoading = false;
     if(fallback){
       papers = fallback;
-      homeLoading = false; homeFailed = 'offline-cached';
+      homeFailed = 'offline-cached';
     } else {
-      homeLoading = false; homeFailed = true; papers = [];
+      homeFailed = true; papers = [];
+      homeErrorMsg = offline ? 'Sin conexión a internet. Cuando vuelva la señal, toca «Reintentar».' : (e && e.message) || '';
     }
   }
   renderDeck();
   const tag = document.getElementById('home-query-tag');
   if(homeFailed === 'offline-cached'){
-    tag.style.display='flex'; tag.innerHTML = 'Sin conexión · mostrando lo último que se cargó';
+    tag.style.display='flex';
+    tag.innerHTML = (offline ? 'Sin conexión' : 'arXiv no respondió')+' · mostrando resultados guardados <button id="home-query-retry">reintentar</button>';
+    document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
+  } else if(stale){
+    tag.style.display='flex';
+    tag.innerHTML = 'arXiv no respondió · mostrando resultados guardados'+(homeQuery?' para «'+esc(homeQuery)+'»':'')+' <button id="home-query-retry">reintentar</button>';
+    document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
   } else if(homeQuery){
     tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
     const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
@@ -593,7 +635,7 @@ const TRANSLATE_LANGS = ['Español','Inglés','Portugués','Francés'];
 const APP_LANGS = ['Español','Inglés','Portugués'];
 const THEMES = [ {id:'normal', name:'Normal', a:'#3f5d46', b:'#fbf8f0'}, {id:'negro', name:'Negro', a:'#8fbf93', b:'#1e1c17'}, {id:'alto-contraste', name:'Alto contraste', a:'#000000', b:'#fff066'} ];
 
-const session = { loggedIn:false, name:lsGet('lab_name')||'', affiliation:lsGet('lab_aff')||'', publicId:lsGet('lab_pid')||'', handle:lsGet('lab_handle')||'' };
+const session = { loggedIn:false, name:lsGet('lab_name')||'', affiliation:lsGet('lab_aff')||'', publicId:lsGet('lab_pid')||'', handle:lsGet('lab_handle')||'', email:lsGet('lab_email')||'' };
 const profile = { interestAreas:['Neurociencia','Aprendizaje profundo','Bioinformática'], translationLanguage:'Español', appLanguage:'Español', theme:'normal' };
 
 let folders = [ {id:'fav', name:'Favoritos'}, {id:'f1', name:'Carpeta personal 1'}, {id:'f2', name:'Carpeta personal 2'} ];
@@ -632,11 +674,24 @@ function getDeviceId(){
   }
   return id;
 }
+const API_TIMEOUT_MS = 35000;
 async function api(path, opts){
-  const res = await fetch(path, opts);
+  // Con tope de tiempo: si el servidor o la red se cuelgan, la app no se queda cargando para siempre.
+  const ctrl = typeof AbortController!=='undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(()=>ctrl.abort(), API_TIMEOUT_MS) : null;
+  let res;
+  try{
+    res = await fetch(path, Object.assign({}, opts||{}, ctrl ? { signal:ctrl.signal } : {}));
+  } catch(e){
+    const err = new Error(navigator.onLine===false ? 'Sin conexión a internet.' : 'No se pudo conectar. Revisa tu conexión e intenta de nuevo.');
+    err.network = true; throw err;
+  } finally { if(timer) clearTimeout(timer); }
   let data = null;
   try{ data = await res.json(); }catch(e){}
-  if(!res.ok) throw new Error((data && data.error) || 'network');
+  if(!res.ok){
+    const err = new Error((data && data.error) || 'No se pudo completar la solicitud.');
+    err.status = res.status; throw err;
+  }
   return data;
 }
 function apiPost(path, body){
@@ -666,7 +721,8 @@ async function registerIdentity(name, aff){
 function openNameSheet(onDone){
   const body =
     '<input class="share-comment" id="name-input" type="text" maxlength="40" placeholder="Tu nombre (el que quieras)" value="'+esc(session.name)+'" style="margin-top:0;">' +
-    '<input class="share-comment" id="aff-input" type="text" maxlength="80" placeholder="Afiliación, ej. Universidad de Chile (opcional)" value="'+esc(session.affiliation)+'">';
+    '<input class="share-comment" id="aff-input" type="text" maxlength="80" placeholder="Afiliación, ej. Universidad de Chile (opcional)" value="'+esc(session.affiliation)+'">' +
+    (session.email ? '' : '<button class="btn-block ghost" id="name-sheet-login" style="margin:10px 0 0;">¿Ya tienes cuenta? Entrar</button>');
   openSheet({
     title:'¿Cómo te llamas?',
     sub:'Elige el nombre que quieras. Te asignaremos un código único (ej. Jose#4821) para que tus amigos te encuentren.',
@@ -683,9 +739,184 @@ function openNameSheet(onDone){
       } catch(e){ toast('No se pudo guardar el nombre. Intenta de nuevo.'); }
     }
   });
+  const loginLink = document.getElementById('name-sheet-login');
+  if(loginLink) loginLink.addEventListener('click', openLoginSheet);
   setTimeout(()=>{ const i=document.getElementById('name-input'); if(i) i.focus(); }, 60);
 }
 function requireIdentity(cb){ if(hasIdentity()) cb(); else openNameSheet(cb); }
+
+/* ================= CUENTA (correo + contraseña, opcional) ================= */
+// Sin correos de confirmación: el correo es solo el "usuario" para entrar desde otro teléfono.
+// Una cuenta queda activa en un teléfono a la vez (como WhatsApp). La biblioteca y las
+// preferencias se respaldan solas en el servidor y se recuperan al entrar.
+function setSheetBusy(busy, label){
+  const b = document.getElementById('sheet-confirm');
+  if(!b) return;
+  if(busy){ b.dataset.label = b.textContent; b.textContent = label || 'Un momento…'; b.disabled = true; }
+  else { b.textContent = b.dataset.label || b.textContent; b.disabled = false; }
+}
+function backupSnapshot(full){
+  const saved = Object.keys(userState).filter(id=>userState[id].folders.size>0 && papersIndex[id]);
+  const us = {}, pc = {};
+  saved.forEach(id=>{
+    const u = userState[id];
+    us[id] = { folders:Array.from(u.folders), showOriginal:u.showOriginal, read:u.read };
+    pc[id] = papersIndex[id];
+  });
+  return { v:1, folders, userState:us, papersCache:pc,
+    profile:{ interestAreas:profile.interestAreas, translationLanguage:profile.translationLanguage, appLanguage:profile.appLanguage, theme:profile.theme },
+    readerStyle };
+}
+let backupTimer = null;
+let lastBackupSig = '';
+function scheduleBackup(){
+  if(!session.email) return;
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(()=>{ backupNow(true); }, 4000);
+}
+async function backupNow(silent){
+  if(!session.email) return false;
+  const data = backupSnapshot();
+  const sig = JSON.stringify(data);
+  if(silent && sig === lastBackupSig) return true;
+  try{
+    const r = await apiPost('/api/auth/backup', { data });
+    lastBackupSig = sig;
+    if(r && r.backupAt) lsSet('lab_backup_at', r.backupAt);
+    return true;
+  } catch(e){
+    if(e.status===401) accountMovedHere();
+    else if(!silent) toast(e.message || 'No se pudo respaldar. Intenta de nuevo.');
+    return false;
+  }
+}
+function clearIdentity(){
+  session.name = ''; session.affiliation = ''; session.publicId = ''; session.handle = ''; session.email = '';
+  ['lab_name','lab_aff','lab_pid','lab_handle','lab_email','lab_backup_at'].forEach(k=>{ try{ localStorage.removeItem(k); }catch(e){} });
+}
+function accountMovedHere(){
+  // La cuenta se abrió en otro teléfono: aquí queda cerrada (los datos locales no se borran).
+  if(!session.email) return;
+  clearIdentity();
+  stopChatPolling(); leaveThread();
+  session.loggedIn = false;
+  closeSheet();
+  document.querySelectorAll('.stage').forEach(s=>s.classList.remove('active'));
+  document.getElementById('stage-login').classList.add('active');
+  toast('Tu cuenta se abrió en otro teléfono. Entra de nuevo para usarla aquí.');
+}
+async function accountStillHere(){
+  // true = seguir normal. Solo se cierra la sesión si el servidor dice claramente que la cuenta ya no está aquí.
+  if(!session.email) return true;
+  try{
+    const d = await api('/api/auth/backup?device='+encodeURIComponent(getDeviceId()));
+    if(d && d.email === session.email) return true;
+    accountMovedHere(); return false;
+  } catch(e){
+    if(e.status===401){ accountMovedHere(); return false; }
+    return true; // sin red o servidor caído: se sigue usando la app con lo guardado
+  }
+}
+function openLoginSheet(){
+  const replacing = hasIdentity() && !session.email;
+  openSheet({
+    title:'Entrar a tu cuenta',
+    sub:'Usa el correo y la contraseña de tu cuenta. Tu nombre, biblioteca y preferencias se recuperan solos.' +
+      (replacing ? ' El perfil sin cuenta de este teléfono ('+session.handle+') se reemplazará por el de tu cuenta.' : ''),
+    bodyHtml:
+      '<input class="share-comment" id="login-email" type="email" inputmode="email" autocomplete="username" maxlength="120" placeholder="Correo" style="margin-top:0;">' +
+      '<input class="share-comment" id="login-pass" type="password" autocomplete="current-password" maxlength="200" placeholder="Contraseña">',
+    footerText:'Entrar',
+    onConfirm: async ()=>{
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-pass').value;
+      if(!email || !password){ toast('Escribe tu correo y tu contraseña'); return; }
+      setSheetBusy(true, 'Entrando…');
+      try{
+        const d = await apiPost('/api/auth/login', { email, password });
+        session.name = d.name; session.affiliation = d.affiliation || ''; session.publicId = d.publicId; session.handle = d.handle; session.email = d.email;
+        lsSet('lab_name', d.name); lsSet('lab_aff', session.affiliation); lsSet('lab_pid', d.publicId); lsSet('lab_handle', d.handle); lsSet('lab_email', d.email);
+        if(d.backup) applySnapshot(d.backup, true);
+        lastBackupSig = '';
+        saveLocalState();
+        socialPosts = []; socialSig = '';
+        setSheetBusy(false);
+        closeSheet();
+        toast('Hola de nuevo, '+d.name);
+        if(document.getElementById('stage-login').classList.contains('active') || !session.loggedIn){
+          session.loggedIn = true; goApp();
+        } else {
+          renderProfile(); startChatPolling(); loadHomeDeck(homeQuery); renderLibrary();
+        }
+        backupNow(true);
+      } catch(e){
+        setSheetBusy(false);
+        toast(e.status===404 ? 'Las cuentas aún no están activadas en el servidor.' : (e.message || 'No se pudo entrar.'));
+      }
+    }
+  });
+  setTimeout(()=>{ const i=document.getElementById('login-email'); if(i) i.focus(); }, 60);
+}
+function openCreateAccountSheet(){
+  if(!hasIdentity()){ openNameSheet(openCreateAccountSheet); return; }
+  openSheet({
+    title:'Crear cuenta',
+    sub:'Protege tu perfil ('+session.handle+') con un correo y una contraseña para entrar desde otro teléfono sin perder tu biblioteca. No te enviaremos correos.',
+    bodyHtml:
+      '<input class="share-comment" id="reg-email" type="email" inputmode="email" autocomplete="username" maxlength="120" placeholder="Correo" style="margin-top:0;">' +
+      '<input class="share-comment" id="reg-pass" type="password" autocomplete="new-password" maxlength="200" placeholder="Contraseña (mínimo 6 caracteres)">' +
+      '<input class="share-comment" id="reg-pass2" type="password" autocomplete="new-password" maxlength="200" placeholder="Repite la contraseña">',
+    footerText:'Crear cuenta',
+    onConfirm: async ()=>{
+      const email = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-pass').value;
+      const password2 = document.getElementById('reg-pass2').value;
+      if(!email){ toast('Escribe tu correo'); return; }
+      if(password.length < 6){ toast('La contraseña debe tener al menos 6 caracteres'); return; }
+      if(password !== password2){ toast('Las contraseñas no coinciden'); return; }
+      setSheetBusy(true, 'Creando…');
+      try{
+        const d = await apiPost('/api/auth/register', { email, password });
+        session.email = d.email; lsSet('lab_email', d.email);
+        lastBackupSig = '';
+        await backupNow(true);
+        setSheetBusy(false);
+        closeSheet(); renderProfile();
+        toast('Cuenta creada. Entra con '+d.email+' desde cualquier teléfono.');
+      } catch(e){
+        setSheetBusy(false);
+        toast(e.status===404 ? 'Las cuentas aún no están activadas en el servidor.' : (e.message || 'No se pudo crear la cuenta.'));
+      }
+    }
+  });
+  setTimeout(()=>{ const i=document.getElementById('reg-email'); if(i) i.focus(); }, 60);
+}
+function formatBackupAt(iso){
+  if(!iso) return 'todavía no';
+  try{ return new Date(iso).toLocaleString('es-CL', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); }catch(e){ return iso; }
+}
+function openAccountSheet(){
+  if(!session.email){ openCreateAccountSheet(); return; }
+  const body = () =>
+    '<div style="font-size:14px; line-height:1.6;">' +
+    '<p style="margin:0 0 8px;"><b>Correo:</b> '+esc(session.email)+'</p>' +
+    '<p style="margin:0 0 8px;"><b>Último respaldo:</b> <span id="acct-backup-at">'+esc(formatBackupAt(lsGet('lab_backup_at')))+'</span></p>' +
+    '<p style="margin:0; color:var(--muted); font-size:13px;">Tu biblioteca y preferencias se respaldan solas. Para usar la cuenta en otro teléfono, toca «Ya tengo cuenta · Entrar» allí; este teléfono se cerrará.</p>' +
+    '</div>';
+  openSheet({
+    title:'Tu cuenta', bodyHtml: body(), footerText:'Respaldar ahora',
+    onConfirm: async ()=>{
+      setSheetBusy(true, 'Respaldando…');
+      const ok = await backupNow(false);
+      setSheetBusy(false);
+      if(ok){
+        const el = document.getElementById('acct-backup-at'); if(el) el.textContent = formatBackupAt(lsGet('lab_backup_at'));
+        toast('Respaldo listo');
+      }
+    }
+  });
+}
+document.getElementById('btn-login-account').addEventListener('click', openLoginSheet);
 
 /* ================= ONBOARDING ================= */
 document.getElementById('btn-create-account').innerHTML = 'Empezar';
@@ -738,8 +969,12 @@ function goApp(){
   showTab('home');
   loadHomeDeck(homeQuery);
   if(hasIdentity()){
-    // Reafirma el nombre en el servidor (mantiene el directorio al día) y arranca el chat.
-    registerIdentity(session.name, session.affiliation).then(startChatPolling).catch(startChatPolling);
+    // Si hay cuenta, primero se comprueba que siga abierta en este teléfono (pudo abrirse en otro).
+    // Luego se reafirma el nombre en el servidor (mantiene el directorio al día) y arranca el chat.
+    accountStillHere().then(ok=>{
+      if(!ok) return;
+      registerIdentity(session.name, session.affiliation).then(startChatPolling).catch(startChatPolling);
+    });
   } else {
     openNameSheet();
   }
@@ -782,6 +1017,7 @@ function openSheet({title, sub, bodyHtml, footerText, onConfirm}){
   document.getElementById('sheet-body').innerHTML = bodyHtml;
   const foot = document.getElementById('sheet-foot');
   const confirmBtn = document.getElementById('sheet-confirm');
+  confirmBtn.disabled = false;
   if(footerText){ foot.style.display='block'; confirmBtn.textContent = footerText; confirmBtn.onclick = ()=>{ if(onConfirm) onConfirm(); }; }
   else { foot.style.display='none'; }
   document.getElementById('sheet-backdrop').classList.add('show');
@@ -834,7 +1070,10 @@ function renderDeck(){
   if(homeFailed && homeFailed!=='offline-cached'){
     deck.innerHTML = homeFailed==='empty'
       ? '<div class="deck-state">No encontramos papers para esa búsqueda. Prueba con otros términos.</div>'
-      : '<div class="deck-state">No se pudo cargar arXiv. Revisa tu conexión e inténtalo de nuevo.</div>';
+      : '<div class="deck-state">'+esc(homeErrorMsg || 'No se pudo cargar arXiv. Revisa tu conexión e inténtalo de nuevo.')+
+        '<br><button class="btn-block" id="deck-retry" style="margin:16px auto 0; max-width:200px;">Reintentar</button></div>';
+    const retry = document.getElementById('deck-retry');
+    if(retry) retry.addEventListener('click', ()=>loadHomeDeck(homeQuery));
     nav.style.display = 'none';
     return;
   }
@@ -1093,6 +1332,7 @@ function openShareContactsSheet(paperId){
 // publica lo ve todo el mundo. Home, Biblioteca y Perfil siguen siendo estado local del navegador.
 let socialPosts = [];
 let socialLoadFailed = false;
+let socialOffline = false;
 let socialLoading = false;
 let socialRefreshPending = false; // alguien pidió un refresco mientras ya había uno en curso
 let socialSig = '';
@@ -1106,13 +1346,21 @@ async function loadAndRenderSocialFeed(silent){
     const data = await api('/api/social/posts?device=' + encodeURIComponent(getDeviceId()));
     const sig = JSON.stringify(data.posts);
     socialLoadFailed = false;
-    if(silent && sig === socialSig){ socialLoading = false; if(socialRefreshPending){ socialRefreshPending=false; loadAndRenderSocialFeed(); } return; }
+    const wasOffline = socialOffline; socialOffline = false;
+    if(silent && sig === socialSig && !wasOffline){ socialLoading = false; if(socialRefreshPending){ socialRefreshPending=false; loadAndRenderSocialFeed(); } return; }
     socialSig = sig;
     socialPosts = data.posts;
+    saveSocialCache(socialPosts);
     await ensurePapersLoaded(socialPosts.map(p=>p.paperId));
   } catch(e){
-    if(!silent || socialPosts.length===0) socialLoadFailed = true;
-    else { socialLoading = false; if(socialRefreshPending){ socialRefreshPending=false; loadAndRenderSocialFeed(); } return; }
+    if(socialPosts.length===0){
+      // Sin red: se muestran las últimas publicaciones que se vieron en este teléfono.
+      const cached = loadSocialCache();
+      if(cached.length){ socialPosts = cached; socialSig = ''; socialOffline = true; socialLoadFailed = false; }
+      else socialLoadFailed = true;
+    } else if(!silent || !socialOffline){
+      socialOffline = true;
+    } else { socialLoading = false; if(socialRefreshPending){ socialRefreshPending=false; loadAndRenderSocialFeed(); } return; }
   }
   socialLoading = false;
   renderSocialFeed();
@@ -1144,10 +1392,23 @@ function postCardHtml(post){
     </div>
   </div>`;
 }
+const SOCIAL_CACHE_KEY = 'lab_social_cache';
+function saveSocialCache(posts){
+  try{ lsSet(SOCIAL_CACHE_KEY, JSON.stringify((posts||[]).slice(0, 50))); }catch(e){}
+}
+function loadSocialCache(){
+  try{ const v = JSON.parse(lsGet(SOCIAL_CACHE_KEY) || '[]'); return Array.isArray(v) ? v : []; }catch(e){ return []; }
+}
+function bindSocialRetry(wrap){
+  const b = wrap.querySelector('#social-retry');
+  if(b) b.addEventListener('click', ()=>loadAndRenderSocialFeed());
+}
 function renderSocialFeed(){
   const wrap = document.getElementById('social-feed');
   if(socialLoadFailed){
-    wrap.innerHTML = '<div class="empty-state">No se pudo cargar el feed compartido. Revisa tu conexión e inténtalo de nuevo.</div>';
+    wrap.innerHTML = '<div class="empty-state">No se pudo cargar el feed compartido. Revisa tu conexión e inténtalo de nuevo.'+
+      '<br><button class="btn-block" id="social-retry" style="margin:14px auto 0; max-width:200px;">Reintentar</button></div>';
+    bindSocialRetry(wrap);
     return;
   }
   if(socialPosts.length===0){
@@ -1155,7 +1416,10 @@ function renderSocialFeed(){
     return;
   }
   const top = wrap.scrollTop;
-  wrap.innerHTML = socialPosts.map(postCardHtml).join('');
+  wrap.innerHTML = (socialOffline
+      ? '<div class="home-query-tag" style="padding:10px 20px 0;">Sin conexión · mostrando lo último que se cargó <button id="social-retry">reintentar</button></div>'
+      : '') + socialPosts.map(postCardHtml).join('');
+  bindSocialRetry(wrap);
   wrap.scrollTop = top;
   wrap.querySelectorAll('.post-paper').forEach(el=> el.addEventListener('click', ()=> openReader(el.dataset.pid)));
   wrap.querySelectorAll('.post-card').forEach(card=>{
@@ -1429,20 +1693,24 @@ async function pollThread(initial){
   try{
     const data = await api('/api/chat/messages?conv='+encodeURIComponent(convId)+'&device='+encodeURIComponent(getDeviceId())+'&after='+chatState.renderedSeq);
     if(convId !== chatState.convId) return;
-    if(initial && data.messages.length===0){
+    // Primera carga sin mensajes, o la primera falló y ahora sí respondió: se reemplaza el aviso.
+    if(chatState.renderedSeq===0 && data.messages.length===0 && (initial || chatState.threadLoadFailed)){
       document.getElementById('thread-messages').innerHTML = '<div class="empty-state">Todavía no hay mensajes. ¡Escribe el primero!</div>';
     }
+    if(chatState.threadLoadFailed && data.messages.length) document.getElementById('thread-messages').innerHTML = '';
+    chatState.threadLoadFailed = false;
     await appendMessages(data.messages);
     if(data.messages.length) refreshInbox();
   } catch(e){
     if(initial){
-      document.getElementById('thread-messages').innerHTML = '<div class="empty-state">No se pudo cargar la conversación.</div>';
+      chatState.threadLoadFailed = true;
+      document.getElementById('thread-messages').innerHTML = '<div class="empty-state">No se pudo cargar la conversación. Reintentando…</div>';
     }
   }
 }
 async function openThread(convId, title, kind){
   leaveThread();
-  chatState.convId = convId; chatState.kind = kind; chatState.renderedSeq = 0;
+  chatState.convId = convId; chatState.kind = kind; chatState.renderedSeq = 0; chatState.threadLoadFailed = false;
   const av = document.getElementById('thread-avatar');
   av.className = 'avatar '+(kind==='general'?'group':'');
   av.textContent = kind==='general' ? 'CL' : (initials(title)||'?');
@@ -1541,6 +1809,7 @@ function renderProfile(){
   document.getElementById('profile-avatar').textContent = initials(session.name) || '?';
   document.getElementById('name-value').innerHTML = esc(session.name || 'Sin nombre') + ' ' + icon('chevronDown');
   document.getElementById('code-value').textContent = session.handle || 'Se asigna al elegir tu nombre';
+  document.getElementById('account-value').innerHTML = (session.email ? esc(session.email) : 'Crear cuenta') + ' ' + icon('chevronDown');
   document.getElementById('profile-greeting').textContent = session.name ? 'Hola! '+session.name : 'Hola!';
   document.getElementById('profile-sub').textContent = [session.handle, session.affiliation].filter(Boolean).join(' · ') || 'Toca «Nombre» para completar tu perfil';
   document.getElementById('interests-value').innerHTML = profile.interestAreas.slice(0,2).join(', ') + (profile.interestAreas.length>2? ` +${profile.interestAreas.length-2}`:'') + ' ' + icon('chevronDown');
@@ -1595,7 +1864,23 @@ document.getElementById('row-theme').addEventListener('click', ()=>{
     });
   });
 });
-document.getElementById('row-logout').addEventListener('click', ()=>{
+document.getElementById('row-account').addEventListener('click', openAccountSheet);
+document.getElementById('row-logout').addEventListener('click', async ()=>{
+  if(session.email){
+    // Con cuenta: se respalda todo y se deja el teléfono limpio (para entrar con otra cuenta o
+    // prestarlo). Si no se puede respaldar, no se cierra, para no perder nada.
+    toast('Respaldando antes de cerrar sesión…');
+    const ok = await backupNow(false);
+    if(!ok){ toast('No se pudo respaldar. Conéctate a internet para cerrar sesión sin perder datos.'); return; }
+    stopChatPolling(); leaveThread();
+    stateSavingDisabled = true;
+    clearIdentity();
+    try{ localStorage.removeItem(STATE_KEY); localStorage.removeItem(SOCIAL_CACHE_KEY); }catch(e){}
+    lsSet('lab_device_id', 'd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+    try{ if('caches' in window) await caches.delete(PDF_CACHE); }catch(e){}
+    location.reload();
+    return;
+  }
   session.loggedIn = false;
   stopChatPolling(); leaveThread();
   toast('Sesión cerrada');
@@ -1668,7 +1953,7 @@ function renderReaderBody(){
     <div class="quick-summary" id="quick-summary-box"></div>
     <div class="abstract-label">Resumen</div>
     <p>${esc(abstract)}</p>
-    <a class="btn-primary pdf-cta" href="/api/pdf?id=${encodeURIComponent(p.id)}" target="_blank" rel="noopener">Abrir el PDF completo${st.downloaded?' (guardado sin conexión)':''}</a>
+    <a class="btn-primary pdf-cta" id="pdf-cta" href="/api/pdf?id=${encodeURIComponent(p.id)}" target="_blank" rel="noopener">Abrir el PDF completo</a>
     <a class="reader-ext-link" href="${p.absUrl}" target="_blank" rel="noopener">Ver la página original en arxiv.org</a>
   `;
   if(st.showOriginal){
@@ -1678,6 +1963,23 @@ function renderReaderBody(){
       renderReaderBody();
     });
   }
+  refreshDownloadUi(p.id);
+  // Comprueba si el PDF sigue de verdad en el teléfono (el sistema puede borrarlo si falta espacio).
+  const pid = p.id;
+  let ctaCached = null;
+  isPdfCached(pid).then(ok=>{
+    ctaCached = ok;
+    if(st.downloaded && !ok && !pdfDownloading.has(pid) && 'caches' in window){
+      ensureUserState(pid).downloaded = false; saveLocalState(); refreshDownloadUi(pid);
+    }
+  });
+  document.getElementById('pdf-cta').addEventListener('click', e=>{
+    // Sin red: solo se puede abrir si está guardado en el teléfono.
+    if(navigator.onLine===false && ctaCached===false){
+      e.preventDefault();
+      toast('Sin conexión. Este PDF no está descargado en el teléfono.');
+    }
+  });
   loadQuickSummary(p);
 }
 const quickSummaryCache = {};
@@ -1685,6 +1987,9 @@ async function loadQuickSummary(p){
   const lang = langCodeFor(profile.translationLanguage);
   const key = p.id+'|'+lang;
   const box = document.getElementById('quick-summary-box');
+  // El resumen simple se guarda junto al paper en el teléfono: no se vuelve a pedir y sirve sin conexión.
+  if(quickSummaryCache[key] === undefined && p.quickSummaries && p.quickSummaries[lang]) quickSummaryCache[key] = p.quickSummaries[lang];
+  if(quickSummaryCache[key] === undefined && navigator.onLine===false){ if(box) box.innerHTML = ''; return; }
   if(quickSummaryCache[key] !== undefined){
     if(box && readerPaperId===p.id) box.innerHTML = quickSummaryCache[key] ? `<b>En simple:</b> ${esc(quickSummaryCache[key])}` : '';
     return;
@@ -1696,6 +2001,10 @@ async function loadQuickSummary(p){
       body: JSON.stringify({ id:p.id, lang, abstract: p.abstractEn || p.abstract })
     });
     quickSummaryCache[key] = data.summary || null;
+    if(data.summary){
+      const cur = papersIndex[p.id];
+      if(cur){ cur.quickSummaries = Object.assign({}, cur.quickSummaries || {}, { [lang]: data.summary }); saveLocalState(); }
+    }
   } catch(e){ quickSummaryCache[key] = null; }
   if(readerPaperId!==p.id) return; // la persona ya cambió de paper
   const nowBox = document.getElementById('quick-summary-box');
@@ -1713,21 +2022,75 @@ document.getElementById('reader-translate').addEventListener('click', ()=>{
   toast(st.showOriginal ? 'Mostrando el texto original en inglés' : 'Traducido a '+profile.translationLanguage);
 });
 document.getElementById('reader-download').innerHTML = icon('download');
-document.getElementById('reader-download').addEventListener('click', ()=>{
-  const p = papersIndex[readerPaperId];
-  if(!p) return;
-  const st = ensureUserState(readerPaperId); st.downloaded = !st.downloaded;
-  document.getElementById('reader-download').classList.toggle('active', st.downloaded); saveLocalState();
+// Descargas: el PDF se guarda de verdad en la memoria del teléfono (Cache Storage). El service
+// worker lo sirve desde ahí, así que se abre aunque no haya internet.
+const PDF_CACHE = 'lab-papers-pdfs-v1';
+function pdfUrlFor(id){ return '/api/pdf?id='+encodeURIComponent(id); }
+async function isPdfCached(id){
+  if(!('caches' in window)) return false;
+  try{ const c = await caches.open(PDF_CACHE); return !!(await c.match(pdfUrlFor(id))); }catch(e){ return false; }
+}
+const pdfDownloading = new Set();
+async function downloadPdf(id){
+  if(!('caches' in window)) throw new Error('Este navegador no permite guardar archivos para usarlos sin conexión.');
+  if(navigator.onLine===false) throw new Error('Sin conexión. Conéctate a internet para descargar el PDF.');
+  const url = pdfUrlFor(id);
+  const ctrl = typeof AbortController!=='undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(()=>ctrl.abort(), 90000) : null;
+  let res;
+  try{ res = await fetch(url, ctrl ? { signal:ctrl.signal } : {}); }
+  catch(e){ throw new Error('No se pudo descargar el PDF. Revisa tu conexión e intenta de nuevo.'); }
+  finally{ if(timer) clearTimeout(timer); }
+  if(!res.ok){
+    let msg = ''; try{ msg = (await res.text()).slice(0, 160); }catch(e){}
+    throw new Error(msg || 'arXiv no entregó el PDF. Intenta de nuevo en un rato.');
+  }
+  const type = res.headers.get('content-type') || '';
+  if(!/pdf|octet-stream/i.test(type)) throw new Error('arXiv no entregó el PDF. Intenta de nuevo en un rato.');
+  try{
+    const c = await caches.open(PDF_CACHE);
+    await c.put(url, res);
+  } catch(e){ throw new Error('No hay espacio suficiente en el teléfono para guardar el PDF.'); }
+}
+async function removePdf(id){
+  if(!('caches' in window)) return;
+  try{ const c = await caches.open(PDF_CACHE); await c.delete(pdfUrlFor(id)); }catch(e){}
+}
+function refreshDownloadUi(id){
+  if(readerPaperId !== id) return;
+  const btn = document.getElementById('reader-download');
+  const st = ensureUserState(id);
+  btn.classList.toggle('active', st.downloaded);
+  btn.disabled = pdfDownloading.has(id);
+  btn.style.opacity = pdfDownloading.has(id) ? '0.5' : '';
+  const cta = document.getElementById('pdf-cta');
+  if(cta) cta.textContent = pdfDownloading.has(id) ? 'Descargando el PDF…'
+    : st.downloaded ? 'Abrir el PDF (guardado en el teléfono)' : 'Abrir el PDF completo';
+}
+document.getElementById('reader-download').addEventListener('click', async ()=>{
+  const id = readerPaperId;
+  const p = papersIndex[id];
+  if(!p || pdfDownloading.has(id)) return;
+  const st = ensureUserState(id);
   if(st.downloaded){
-    const pdfProxyUrl = '/api/pdf?id='+encodeURIComponent(p.id);
-    if('caches' in window){
-      caches.open('lab-papers-pdfs-v1').then(c=>c.add(pdfProxyUrl)).catch(()=>{});
-    }
-    window.open(pdfProxyUrl, '_blank', 'noopener');
-    renderReaderBody();
-    toast('Guardando el PDF para leerlo sin conexión…');
-  } else {
-    toast('Quitado de guardados para después');
+    st.downloaded = false; saveLocalState();
+    await removePdf(id);
+    refreshDownloadUi(id);
+    toast('PDF quitado del teléfono');
+    return;
+  }
+  pdfDownloading.add(id); refreshDownloadUi(id);
+  toast('Descargando el PDF…');
+  try{
+    await downloadPdf(id);
+    ensureUserState(id).downloaded = true; saveLocalState();
+    toast('PDF guardado. Puedes leerlo sin conexión.');
+  } catch(e){
+    toast(e.message || 'No se pudo descargar el PDF.');
+  } finally {
+    pdfDownloading.delete(id);
+    refreshDownloadUi(id);
+    updateTabDots();
   }
 });
 document.getElementById('reader-style').innerHTML = icon('style');
@@ -1796,49 +2159,82 @@ function snapshotState(){
   // Se cachea todo lo que se ha visto (acotado por MAX_CACHED_PAPERS), no solo lo guardado:
   // así Home, Biblioteca y lo que se abrió antes siguen funcionando sin conexión.
   return JSON.stringify({ v:3, folders, userState:us, papersCache:papersIndex, papersSeenOrder,
-    lastHomeIds, lastHomeWasSearch,
+    lastHomeIds, lastHomeWasSearch, searchCache,
     profile:{ interestAreas:profile.interestAreas, translationLanguage:profile.translationLanguage, appLanguage:profile.appLanguage, theme:profile.theme },
     readerStyle });
 }
+let stateSavingDisabled = false;
 function saveLocalState(){
+  if(stateSavingDisabled) return;
   const snap = snapshotState();
   if(snap === lastSavedState) return;
   lastSavedState = snap;
   lsSet(STATE_KEY, snap);
+  scheduleBackup();
 }
-function loadLocalState(){
-  const raw = lsGet(STATE_KEY);
-  if(!raw) return;
-  try{
-    const d = JSON.parse(raw);
-    if(Array.isArray(d.folders) && d.folders.every(f=>f && typeof f.id==='string' && typeof f.name==='string')) folders = d.folders;
-    if(d.papersCache && typeof d.papersCache==='object'){
-      Object.values(d.papersCache).forEach(p=>{ if(p && typeof p.id==='string') papersIndex[p.id] = p; });
-    }
+// Aplica un estado guardado. merge=false: el guardado local de este teléfono (reemplaza).
+// merge=true: el respaldo de la cuenta al entrar (suma carpetas y papers guardados, sin borrar
+// lo que ya hubiera en este teléfono; las preferencias sí se toman del respaldo).
+function applySnapshot(d, merge){
+  if(!d || typeof d!=='object') return;
+  if(Array.isArray(d.folders) && d.folders.every(f=>f && typeof f.id==='string' && typeof f.name==='string')){
+    if(!merge) folders = d.folders;
+    else d.folders.forEach(f=>{ if(!folders.some(x=>x.id===f.id)) folders.push({ id:f.id, name:f.name }); });
+  }
+  if(d.papersCache && typeof d.papersCache==='object'){
+    Object.values(d.papersCache).forEach(p=>{
+      if(!p || typeof p.id!=='string') return;
+      if(merge){ if(papersIndex[p.id]) return; papersSeenOrder.push(p.id); }
+      papersIndex[p.id] = p;
+    });
+  }
+  if(!merge){
     papersSeenOrder = Array.isArray(d.papersSeenOrder) ? d.papersSeenOrder.filter(id=>papersIndex[id]) : Object.keys(papersIndex);
     if(Array.isArray(d.lastHomeIds)) lastHomeIds = d.lastHomeIds;
     lastHomeWasSearch = !!d.lastHomeWasSearch;
-    if(d.userState){
-      Object.keys(d.userState).forEach(id=>{
-        const u = d.userState[id]; if(!u) return;
-        const st = ensureUserState(id);
-        st.folders = new Set(Array.isArray(u.folders) ? u.folders : []);
+    if(d.searchCache && typeof d.searchCache==='object'){
+      Object.keys(d.searchCache).forEach(k=>{
+        const v = d.searchCache[k];
+        if(v && Array.isArray(v.ids)) searchCache[k] = { ids:v.ids.filter(x=>typeof x==='string'), at:+v.at||0 };
+      });
+    }
+  }
+  if(d.userState && typeof d.userState==='object'){
+    Object.keys(d.userState).forEach(id=>{
+      const u = d.userState[id]; if(!u) return;
+      const st = ensureUserState(id);
+      const fl = Array.isArray(u.folders) ? u.folders.filter(x=>typeof x==='string') : [];
+      if(merge){
+        fl.forEach(x=>st.folders.add(x));
+        st.read = st.read || !!u.read;
+      } else {
+        st.folders = new Set(fl);
         st.downloaded = !!u.downloaded;
         st.showOriginal = !!u.showOriginal;
         st.read = !!u.read;
-      });
-    }
-    if(d.profile){
-      if(Array.isArray(d.profile.interestAreas) && d.profile.interestAreas.length) profile.interestAreas = d.profile.interestAreas;
-      ['translationLanguage','appLanguage'].forEach(k=>{ if(typeof d.profile[k]==='string') profile[k] = d.profile[k]; });
-      if(THEMES.some(t=>t.id===d.profile.theme)) profile.theme = d.profile.theme;
-    }
-    if(d.readerStyle){
-      if(['claro','sepia','oscuro'].includes(d.readerStyle.theme)) readerStyle.theme = d.readerStyle.theme;
-      const fs = +d.readerStyle.fontSize; if(fs>=14 && fs<=22) readerStyle.fontSize = fs;
-    }
-    lastSavedState = raw;
-  } catch(e){ /* datos corruptos: se ignoran y se parte de cero */ }
+      }
+    });
+  }
+  if(d.profile){
+    if(Array.isArray(d.profile.interestAreas) && d.profile.interestAreas.length) profile.interestAreas = d.profile.interestAreas;
+    ['translationLanguage','appLanguage'].forEach(k=>{ if(typeof d.profile[k]==='string') profile[k] = d.profile[k]; });
+    if(THEMES.some(t=>t.id===d.profile.theme)) profile.theme = d.profile.theme;
+  }
+  if(d.readerStyle){
+    if(['claro','sepia','oscuro'].includes(d.readerStyle.theme)) readerStyle.theme = d.readerStyle.theme;
+    const fs = +d.readerStyle.fontSize; if(fs>=14 && fs<=22) readerStyle.fontSize = fs;
+  }
+  document.getElementById('phone').setAttribute('data-theme', profile.theme);
+  document.documentElement.style.setProperty('--reader-font', readerStyle.fontSize+'px');
+}
+function loadLocalState(){
+  const raw = lsGet(STATE_KEY);
+  if(raw){
+    try{
+      applySnapshot(JSON.parse(raw), false);
+      lastSavedState = raw;
+    } catch(e){ /* datos corruptos: se ignoran y se parte de cero */ }
+  }
   document.getElementById('phone').setAttribute('data-theme', profile.theme);
   document.documentElement.style.setProperty('--reader-font', readerStyle.fontSize+'px');
 }
