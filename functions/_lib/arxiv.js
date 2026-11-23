@@ -81,6 +81,10 @@ const LANG_NAMES = { es:'spanish', en:'english', pt:'portuguese', fr:'french' };
 // Si una traducción no responde dentro de este tiempo, se muestra el original en inglés para
 // esta visita (la traducción real sigue en segundo plano y queda cacheada para la próxima).
 const TRANSLATE_TIMEOUT_MS = 9000;
+// Cuánto se espera a la IA antes de responder cuando el paper no tiene ninguna traducción guardada,
+// y cuánto se deja correr una traducción "de fondo" después de responder.
+const FAST_TRANSLATE_TIMEOUT_MS = 3500;
+const BACKGROUND_TIMEOUT_MS = 25000;
 // Ni el modelo ni el "resumen" de arXiv tienen límite de largo estricto, pero mandarle un texto
 // demasiado largo al modelo de traducción es lo que más seguido causa una respuesta cortada o
 // vacía ("errores de traducción"). Se recorta a un tamaño que el modelo traduce de forma confiable.
@@ -146,13 +150,14 @@ async function translateTitle(env, title, targetName){
 // una llamada a la IA por un campo que ya se tradujo antes. Si un campo se pasa del tiempo de
 // espera, la llamada real sigue corriendo "de fondo": cuando termine (bien o mal), se guarda en
 // D1 para la próxima persona, sin hacer esperar a quien hizo esta visita.
-async function translateOne(env, e, cachedRow, targetName, lang, hasDB, waitUntil){
+async function translateOne(env, e, cachedRow, targetName, lang, hasDB, waitUntil, timeoutMs){
+  const waitMs = timeoutMs || TRANSLATE_TIMEOUT_MS;
   const titleJob = (cachedRow && cachedRow.title) ? null : translateTitle(env, e.title, targetName).catch(() => null);
   const abstractJob = (cachedRow && cachedRow.abstract) ? null : translateText(env, e.abstract, targetName).catch(() => null);
 
   const [titleSettled, abstractSettled] = await Promise.allSettled([
-    titleJob ? withTimeout(titleJob, TRANSLATE_TIMEOUT_MS) : Promise.resolve(cachedRow.title),
-    abstractJob ? withTimeout(abstractJob, TRANSLATE_TIMEOUT_MS) : Promise.resolve(cachedRow.abstract)
+    titleJob ? withTimeout(titleJob, waitMs) : Promise.resolve(cachedRow.title),
+    abstractJob ? withTimeout(abstractJob, waitMs) : Promise.resolve(cachedRow.abstract)
   ]);
   const title = (titleSettled.status === 'fulfilled' && titleSettled.value) ? titleSettled.value : e.title;
   const abstract = (abstractSettled.status === 'fulfilled' && abstractSettled.value) ? abstractSettled.value : e.abstract;
@@ -229,10 +234,21 @@ export async function translateEntries(env, entries, lang, waitUntil){
         abstract: (hit && hit.abstract) || (old && old.abstract) || e.abstract,
         titleEn: e.title, abstractEn: e.abstract };
     }
-    const result = await translateOne(env, e, hit, targetName, cacheLang, hasDB, waitUntil);
-    // Si la traducción nueva no alcanzó a llegar (quedó en inglés), se muestra la antigua si existe.
-    const title = (result.title === e.title && old && old.title) ? old.title : result.title;
-    const abstract = (result.abstract === e.abstract && old && old.abstract) ? old.abstract : result.abstract;
-    return { ...e, title, abstract, titleEn: e.title, abstractEn: e.abstract };
+    // Ya hay traducción nueva completa: se responde al instante.
+    if (hit && hit.title && hit.abstract) {
+      return { ...e, title: hit.title, abstract: hit.abstract, titleEn: e.title, abstractEn: e.abstract };
+    }
+    // Hay una traducción antigua: se muestra al instante y la nueva se genera "de fondo" para la
+    // próxima visita. Así nadie espera a la IA por un paper que ya se puede leer en español.
+    if (old && old.title && old.abstract) {
+      const job = translateOne(env, e, hit, targetName, cacheLang, hasDB, waitUntil, BACKGROUND_TIMEOUT_MS).catch(() => {});
+      if (waitUntil) waitUntil(job);
+      return { ...e, title: old.title, abstract: old.abstract, titleEn: e.title, abstractEn: e.abstract };
+    }
+    // Paper sin ninguna traducción: se espera poco. Si la IA no alcanza, se muestra en inglés con
+    // "pending" y la app vuelve a pedirlo en unos segundos, cuando ya quedó guardado.
+    const result = await translateOne(env, e, hit, targetName, cacheLang, hasDB, waitUntil, FAST_TRANSLATE_TIMEOUT_MS);
+    const pending = result.title === e.title || result.abstract === e.abstract;
+    return { ...e, title: result.title, abstract: result.abstract, titleEn: e.title, abstractEn: e.abstract, pending };
   }));
 }

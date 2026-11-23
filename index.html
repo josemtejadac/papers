@@ -562,8 +562,7 @@ let homeLoadSeq = 0;
 async function loadHomeDeck(query){
   const seq = ++homeLoadSeq;
   homeQuery = (query || '').trim();
-  homeLoading = true; homeFailed = false; homeErrorMsg = ''; deckIndex = 0;
-  renderDeck();
+  homeFailed = false; homeErrorMsg = ''; deckIndex = 0;
   const offline = typeof navigator!=='undefined' && navigator.onLine===false;
   const filterCategory = document.getElementById('home-filter-category').value.trim();
   const filterFrom = document.getElementById('home-filter-from').value;
@@ -577,29 +576,42 @@ async function loadHomeDeck(query){
   params.set('lang', langCodeFor(profile.translationLanguage));
   params.set('max', '8');
   const searchKey = params.toString();
+
+  // Al instante: si esta misma búsqueda ya se hizo en este teléfono, se muestra de inmediato lo
+  // guardado mientras se piden los resultados nuevos (nadie se queda mirando «Buscando en arXiv…»).
+  const instant = cachedSearchDeck(searchKey)
+    || ((!homeQuery && !filterCategory && !filterFrom && !filterTo && !lastHomeWasSearch) ? offlineFallbackDeck() : null);
+  if(instant){ papers = instant; homeLoading = false; }
+  else { homeLoading = true; papers = []; }
+  renderDeck();
+  setHomeTag(instant && !offline ? 'updating' : '', offline);
+
   let stale = false;
   try{
     if(offline) throw new Error('offline');
     const data = await api('/api/papers?'+searchKey);
     if(seq !== homeLoadSeq) return; // llegó una búsqueda más nueva mientras esta cargaba
     mergePapers(data.papers);
-    papers = data.papers.map(p=>papersIndex[p.id]);
+    const fresh = data.papers.map(p=>papersIndex[p.id]).filter(Boolean);
     stale = !!data.stale;
-    if(papers.length){
-      lastHomeIds = papers.map(p=>p.id);
+    if(fresh.length){
+      // Si la persona ya empezó a deslizar lo guardado, no se le cambia el mazo bajo el dedo:
+      // solo se actualizan los textos (por ejemplo, traducciones que llegaron).
+      if(!instant || deckIndex === 0){ papers = fresh; deckIndex = 0; }
+      else papers = papers.map(p=>papersIndex[p.id] || p);
+      lastHomeIds = fresh.map(p=>p.id);
       lastHomeWasSearch = !!homeQuery;
       rememberSearch(searchKey, lastHomeIds);
+    } else if(!instant){
+      homeFailed = 'empty';
     }
     saveLocalState();
     homeLoading = false;
-    if(!papers.length) homeFailed = 'empty';
+    schedulePendingTranslations(data.papers);
   } catch(e){
     if(seq !== homeLoadSeq) return;
-    const fallback = cachedSearchDeck(searchKey)
-      || ((!homeQuery && !lastHomeWasSearch) ? offlineFallbackDeck() : null);
     homeLoading = false;
-    if(fallback){
-      papers = fallback;
+    if(instant){
       homeFailed = 'offline-cached';
     } else {
       homeFailed = true; papers = [];
@@ -607,22 +619,47 @@ async function loadHomeDeck(query){
     }
   }
   renderDeck();
+  setHomeTag(homeFailed === 'offline-cached' ? 'cached' : stale ? 'stale' : '', offline);
+}
+function setHomeTag(state, offline){
   const tag = document.getElementById('home-query-tag');
-  if(homeFailed === 'offline-cached'){
-    tag.style.display='flex';
+  tag.style.display = 'flex';
+  if(state === 'updating'){
+    tag.innerHTML = 'Mostrando lo último guardado · actualizando…';
+  } else if(state === 'cached'){
     tag.innerHTML = (offline ? 'Sin conexión' : 'arXiv no respondió')+' · mostrando resultados guardados <button id="home-query-retry">reintentar</button>';
-    document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
-  } else if(stale){
-    tag.style.display='flex';
+  } else if(state === 'stale'){
     tag.innerHTML = 'arXiv no respondió · mostrando resultados guardados'+(homeQuery?' para «'+esc(homeQuery)+'»':'')+' <button id="home-query-retry">reintentar</button>';
-    document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
   } else if(homeQuery){
-    tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button> · <button class="arxiv-info-btn">¿qué hay en arXiv?</button>';
-    const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
+    tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button> · <button class="arxiv-info-btn">¿qué hay en arXiv?</button>';
   } else {
-    tag.style.display='flex'; tag.innerHTML = 'Recomendados según tus intereses · <button class="arxiv-info-btn">¿qué hay en arXiv?</button>';
+    tag.innerHTML = 'Recomendados según tus intereses · <button class="arxiv-info-btn">¿qué hay en arXiv?</button>';
   }
+  const retry = document.getElementById('home-query-retry');
+  if(retry) retry.addEventListener('click', ()=>loadHomeDeck(homeQuery));
+  const clear = document.getElementById('home-query-clear');
+  if(clear) clear.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
   tag.querySelectorAll('.arxiv-info-btn').forEach(b=>b.addEventListener('click', openArxivInfoSheet));
+}
+// Papers que llegaron sin traducir porque la IA tardó: el servidor los sigue traduciendo y los
+// guarda; aquí se vuelven a pedir unos segundos después para mostrarlos ya en español.
+let pendingTranslationTimer = null;
+function schedulePendingTranslations(list, attempt){
+  const ids = (list || []).filter(p=>p && p.pending).map(p=>p.id);
+  if(!ids.length) return;
+  const tries = attempt || 0;
+  clearTimeout(pendingTranslationTimer);
+  pendingTranslationTimer = setTimeout(async ()=>{
+    try{
+      const d = await api('/api/papers?ids='+encodeURIComponent(ids.join(','))+'&lang='+encodeURIComponent(langCodeFor(profile.translationLanguage)));
+      mergePapers(d.papers);
+      papers = papers.map(p=>papersIndex[p.id] || p);
+      saveLocalState();
+      if(currentTab === 'home' && !homeLoading) renderDeck();
+      if(readerPaperId && ids.includes(readerPaperId) && document.getElementById('reader').classList.contains('open')) renderReaderBody();
+      if(tries < 2) schedulePendingTranslations(d.papers, tries + 1);
+    } catch(e){ /* se intentará en la próxima carga */ }
+  }, 7000);
 }
 function openArxivInfoSheet(){
   openSheet({
@@ -1365,7 +1402,12 @@ async function loadAndRenderSocialFeed(silent){
   if(socialLoading){ if(!silent) socialRefreshPending = true; return; }
   socialLoading = true;
   const wrap = document.getElementById('social-feed');
-  if(!silent && socialPosts.length===0) wrap.innerHTML = '<div class="empty-state">Cargando publicaciones…</div>';
+  if(!silent && socialPosts.length===0){
+    // Al instante: lo último que se vio en este teléfono, mientras llega lo nuevo.
+    const cached = loadSocialCache();
+    if(cached.length){ socialPosts = cached; renderSocialFeed(); }
+    else wrap.innerHTML = '<div class="empty-state">Cargando publicaciones…</div>';
+  }
   try{
     const data = await api('/api/social/posts?device=' + encodeURIComponent(getDeviceId()));
     const sig = JSON.stringify(data.posts);
@@ -1375,7 +1417,11 @@ async function loadAndRenderSocialFeed(silent){
     socialSig = sig;
     socialPosts = data.posts;
     saveSocialCache(socialPosts);
-    await ensurePapersLoaded(socialPosts.map(p=>p.paperId));
+    // Los papers compartidos se completan después, sin hacer esperar al feed.
+    const missingPapers = socialPosts.map(p=>p.paperId).filter(id=>id && !papersIndex[id]);
+    if(missingPapers.length){
+      ensurePapersLoaded(missingPapers).then(loaded=>{ if(loaded && currentTab==='chat' && !chatState.convId) renderSocialFeed(); });
+    }
   } catch(e){
     if(socialPosts.length===0){
       // Sin red: se muestran las últimas publicaciones que se vieron en este teléfono.
@@ -1698,7 +1744,16 @@ async function appendMessages(msgs){
   const box = document.getElementById('thread-messages');
   const fresh = msgs.filter(m=>m.seq > chatState.renderedSeq);
   if(!fresh.length) return;
-  await ensurePapersLoaded(fresh.map(m=>m.paperId));
+  // Los mensajes se muestran al tiro; el título del paper adjunto se completa cuando llega.
+  const missing = fresh.map(m=>m.paperId).filter(id=>id && !papersIndex[id]);
+  if(missing.length){
+    ensurePapersLoaded(missing).then(()=>{
+      box.querySelectorAll('.attach').forEach(a=>{
+        const p = papersIndex[a.dataset.pid];
+        if(p) a.textContent = '📄 ' + p.title;
+      });
+    });
+  }
   const wasEmpty = chatState.renderedSeq === 0;
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 90;
   const lastMine = fresh[fresh.length-1].senderId === session.publicId;
