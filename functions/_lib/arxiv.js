@@ -105,12 +105,21 @@ async function translateText(env, text, targetName, sourceName){
   return out;
 }
 
+// Títulos del tipo "Algo: subtítulo": el modelo suele traducir solo una de las dos partes y dejar
+// la otra en inglés. Se traduce cada parte por separado y se vuelven a unir.
+async function translateTitle(env, title, targetName){
+  const m = String(title || '').match(/^(.{4,}?)\s*:\s*(.{4,})$/);
+  if (!m) return translateText(env, title, targetName);
+  const [a, b] = await Promise.all([translateText(env, m[1], targetName), translateText(env, m[2], targetName)]);
+  return a + ': ' + b;
+}
+
 // Traduce un paper, campo por campo, reusando lo que ya esté en caché (cachedRow) y sin repetir
 // una llamada a la IA por un campo que ya se tradujo antes. Si un campo se pasa del tiempo de
 // espera, la llamada real sigue corriendo "de fondo": cuando termine (bien o mal), se guarda en
 // D1 para la próxima persona, sin hacer esperar a quien hizo esta visita.
 async function translateOne(env, e, cachedRow, targetName, lang, hasDB, waitUntil){
-  const titleJob = (cachedRow && cachedRow.title) ? null : translateText(env, e.title, targetName).catch(() => null);
+  const titleJob = (cachedRow && cachedRow.title) ? null : translateTitle(env, e.title, targetName).catch(() => null);
   const abstractJob = (cachedRow && cachedRow.abstract) ? null : translateText(env, e.abstract, targetName).catch(() => null);
 
   const [titleSettled, abstractSettled] = await Promise.allSettled([

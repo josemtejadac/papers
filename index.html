@@ -327,7 +327,7 @@ input[type=range]{ width:100%; accent-color:var(--accent); }
       <div class="helptext">Desliza · toca la tarjeta para leerla</div>
     </div>
     <div class="home-search">
-      <input id="home-search" type="search" placeholder="Buscar en arXiv (ej. transformers, q-bio.NC)…" autocomplete="off">
+      <input id="home-search" type="search" placeholder="Buscar en arXiv (ej. violencia familiar)…" autocomplete="off">
       <button id="home-filters-btn" aria-label="Filtros">Filtros</button>
       <button id="home-search-btn">Buscar</button>
     </div>
@@ -617,7 +617,10 @@ async function loadHomeDeck(query){
     tag.innerHTML = 'arXiv no respondió · mostrando resultados guardados'+(homeQuery?' para «'+esc(homeQuery)+'»':'')+' <button id="home-query-retry">reintentar</button>';
     document.getElementById('home-query-retry').addEventListener('click', ()=>loadHomeDeck(homeQuery));
   } else if(homeQuery){
-    tag.style.display='flex'; tag.innerHTML = 'Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>';
+    const oneWord = homeQuery.split(/\s+/).filter(w=>w.length>2).length < 2;
+    tag.style.display='flex';
+    tag.innerHTML = '<span>Resultados para «'+esc(homeQuery)+'» <button id="home-query-clear">ver recomendados</button>' +
+      (oneWord ? '<br><span style="opacity:.85;">Tip: con 2–3 palabras es más preciso (ej. «violencia familiar», «crianza de los hijos»).</span>' : '') + '</span>';
     const btn = document.getElementById('home-query-clear'); if(btn) btn.addEventListener('click', ()=>{ document.getElementById('home-search').value=''; loadHomeDeck(''); });
   } else { tag.style.display='none'; tag.innerHTML=''; }
 }

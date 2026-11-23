@@ -44,7 +44,7 @@ async function handleGet({ request, env, waitUntil }){
 
     // La clave usa la búsqueda tal como la escribió la persona: si ya se buscó antes, ni siquiera
     // hace falta volver a traducir el término ni consultar arXiv.
-    const queryKey = JSON.stringify({ q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
+    const queryKey = JSON.stringify({ v: 2, q: qRaw.toLowerCase(), lang, categories, from, to, start, max });
     const cachedQuery = await getCachedQuery(env, queryKey);
 
     if (cachedQuery && isFresh(cachedQuery.fetchedAt, QUERY_FRESH_MS)) {
@@ -60,7 +60,8 @@ async function handleGet({ request, env, waitUntil }){
         const q = qRaw ? await translateQueryToEnglish(env, qRaw, lang) : '';
         const parts = [];
         if (categories.length) parts.push('(' + categories.map(c => 'cat:' + c).join(' OR ') + ')');
-        if (q) parts.push('all:' + q.replace(/[()"]/g, ' '));
+        const textQuery = buildTextQuery(q);
+        if (textQuery) parts.push(textQuery);
         if (from || to) {
           const d0 = (from || '1991-01-01').replace(/-/g, '') + '0000';
           const d1 = (to || '2100-01-01').replace(/-/g, '') + '2359';
@@ -70,7 +71,10 @@ async function handleGet({ request, env, waitUntil }){
 
         const apiUrl = new URL('https://export.arxiv.org/api/query');
         apiUrl.searchParams.set('search_query', parts.join(' AND '));
-        apiUrl.searchParams.set('sortBy', 'submittedDate');
+        // Con 2+ palabras: lo más relacionado primero (funciona bien: "violencia doméstica" trae
+        // justo eso). Con una sola palabra, el orden por relevancia de arXiv trae cosas viejas y de
+        // otras áreas ("transformers" -> "transform" de matemáticas), así que ahí va lo más nuevo.
+        apiUrl.searchParams.set('sortBy', textQuery && textQuery.includes(' AND ') ? 'relevance' : 'submittedDate');
         apiUrl.searchParams.set('sortOrder', 'descending');
         apiUrl.searchParams.set('start', String(start));
         apiUrl.searchParams.set('max_results', String(max));
@@ -93,6 +97,20 @@ async function handleGet({ request, env, waitUntil }){
 
   const withLang = await translateEntries(env, entries, lang === 'en' ? 'en' : lang, waitUntil);
   return json({ papers: withLang, count: withLang.length, lang, stale });
+}
+
+// Arma la parte de texto de la búsqueda para arXiv. Cada palabra importante debe aparecer en el
+// título o en el resumen (no en cualquier parte, como autores o comentarios), y se descartan
+// palabras vacías ("the", "of", "and"…) que solo meten ruido.
+const STOPWORDS = new Set(['a','an','the','of','and','or','in','on','for','to','with','by','at','from','about','into','is','are','be','as','its','their','his','her','how','what','why','using','based']);
+function buildTextQuery(q){
+  const words = String(q || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}.\-\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(w => w && !STOPWORDS.has(w))
+    .slice(0, 6);
+  if (!words.length) return '';
+  return '(' + words.map(w => `(ti:${w} OR abs:${w})`).join(' AND ') + ')';
 }
 
 export const onRequestGet = safe(handleGet);
